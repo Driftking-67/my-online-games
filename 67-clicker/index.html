@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>67 Clicker – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    h1 { margin: 0 0 4px; }
+    .total {
+      font-size: 2.6rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      margin-top: 8px;
+      text-align: center;
+    }
+    .rates { color: var(--muted); margin-bottom: 18px; text-align: center; }
+    #big {
+      width: 220px; height: 220px;
+      border-radius: 50%;
+      border: none;
+      font-size: 5.5rem;
+      font-weight: 900;
+      color: #fff;
+      background: radial-gradient(circle at 35% 30%, #ff9f43, #ee5a24 55%, #b33916);
+      box-shadow: 0 10px 0 #8a2b10, 0 18px 30px var(--shadow);
+      transition: transform 0.06s;
+      text-shadow: 0 4px 0 rgba(0,0,0,0.25);
+      touch-action: manipulation;
+    }
+    #big:hover { background: radial-gradient(circle at 35% 30%, #ffb062, #f0682f 55%, #bf4019); }
+    #big:active { transform: translateY(6px) scale(0.97); box-shadow: 0 4px 0 #8a2b10, 0 8px 16px var(--shadow); }
+    .pop {
+      position: fixed;
+      font-weight: 800;
+      font-size: 1.4rem;
+      color: #ff7f2a;
+      pointer-events: none;
+      animation: floatUp 0.9s ease-out forwards;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+      z-index: 20;
+    }
+    @keyframes floatUp {
+      from { opacity: 1; transform: translate(-50%, 0); }
+      to { opacity: 0; transform: translate(-50%, -70px); }
+    }
+    h2 { margin: 30px 0 10px; font-size: 1.2rem; }
+    #shop {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 10px;
+      width: min(100%, 760px);
+    }
+    .upg {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      padding: 12px;
+      border-radius: 12px;
+    }
+    .upg .icon { font-size: 1.9rem; }
+    .upg .info { flex: 1; min-width: 0; }
+    .upg .name { font-weight: 700; }
+    .upg .desc { font-size: 0.85rem; color: var(--muted); }
+    .upg .cost { font-size: 0.9rem; margin-top: 2px; }
+    .upg .owned { font-size: 1.3rem; font-weight: 800; color: var(--muted); }
+    .upg.can { border-color: var(--accent); }
+    .upg.can .cost { color: var(--success); font-weight: 600; }
+    #golden {
+      position: fixed;
+      display: none;
+      width: 86px; height: 86px;
+      border-radius: 50%;
+      border: 3px solid #fff7c2;
+      font-size: 2.1rem;
+      font-weight: 900;
+      color: #6b4b00;
+      background: radial-gradient(circle at 35% 30%, #fff6a8, #ffcf2e 55%, #d99a00);
+      box-shadow: 0 0 25px 8px rgba(255, 210, 50, 0.7);
+      animation: wobble 1s ease-in-out infinite alternate;
+      z-index: 15;
+      padding: 0;
+    }
+    @keyframes wobble { from { transform: rotate(-10deg) scale(1); } to { transform: rotate(10deg) scale(1.1); } }
+    #toast {
+      position: fixed; left: 50%; top: 80px; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 10px 16px; border-radius: 10px; font-weight: 700;
+      box-shadow: 0 8px 24px var(--shadow);
+      opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 30;
+    }
+    #toast.show { opacity: 1; }
+    .footer { margin-top: 30px; color: var(--muted); font-size: 0.85rem; display: flex; gap: 12px; align-items: center; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>67 Clicker</h1>
+    <div class="total"><span id="total">0</span></div>
+    <div class="rates"><span id="perClick">1</span> per click · <span id="perSec">0</span> per second</div>
+
+    <button id="big" aria-label="Click the 67">67</button>
+
+    <h2>Upgrades</h2>
+    <div id="shop"></div>
+
+    <div class="footer">
+      <span>Your progress saves on this device.</span>
+      <button id="reset">Start over</button>
+    </div>
+  </main>
+
+  <button id="golden" aria-label="Golden 67">67</button>
+  <div id="toast"></div>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script>
+    const UPGRADES = [
+      { id: 'finger',  icon: '👆', name: 'Stronger Finger', desc: '+1 per click',        base: 15,     click: 1 },
+      { id: 'auto',    icon: '🖱️', name: 'Auto Clicker',    desc: '+1 per second',       base: 50,     sec: 1 },
+      { id: 'six',     icon: '6️⃣', name: 'Six Squad',       desc: '+6 per second',       base: 400,    sec: 6 },
+      { id: 'seven',   icon: '7️⃣', name: 'Seven Squad',     desc: '+7 per click',        base: 700,    click: 7 },
+      { id: 'factory', icon: '🏭', name: '67 Factory',      desc: '+67 per second',      base: 6700,   sec: 67 },
+      { id: 'mega',    icon: '💪', name: 'Mega Finger',     desc: '+67 per click',       base: 25000,  click: 67 },
+      { id: 'rocket',  icon: '🚀', name: '67 Rocket',       desc: '+670 per second',     base: 67000,  sec: 670 },
+      { id: 'galaxy',  icon: '🌌', name: '67 Galaxy',       desc: '+6,700 per second',   base: 670000, sec: 6700 },
+      { id: 'multi',   icon: '♾️', name: '67 Multiverse',   desc: '+67,000 per second',  base: 6700000, sec: 67000 },
+    ];
+    const SAVE_KEY = 'clicker67-save';
+
+    let game = { total: 0, owned: {} };
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+      if (saved && typeof saved.total === 'number') game = Object.assign(game, saved);
+    } catch (e) {}
+
+    const owned = id => game.owned[id] || 0;
+    const cost = u => Math.floor(u.base * Math.pow(1.15, owned(u.id)));
+    const perClick = () => 1 + UPGRADES.reduce((s, u) => s + (u.click || 0) * owned(u.id), 0);
+    const perSec = () => UPGRADES.reduce((s, u) => s + (u.sec || 0) * owned(u.id), 0);
+
+    function fmt(n) {
+      n = Math.floor(n);
+      if (n < 1e6) return n.toLocaleString();
+      const units = [['T', 1e12], ['B', 1e9], ['M', 1e6]];
+      for (const [u, v] of units) if (n >= v) return (n / v).toFixed(2) + u;
+    }
+
+    function save() {
+      try { localStorage.setItem(SAVE_KEY, JSON.stringify(game)); } catch (e) {}
+    }
+
+    // ----- Shop -----
+    const shop = document.getElementById('shop');
+    const cards = {};
+    for (const u of UPGRADES) {
+      const b = document.createElement('button');
+      b.className = 'upg';
+      b.innerHTML = `<span class="icon">${u.icon}</span>
+        <span class="info"><div class="name">${u.name}</div><div class="desc">${u.desc}</div><div class="cost"></div></span>
+        <span class="owned"></span>`;
+      b.onclick = () => buy(u);
+      shop.appendChild(b);
+      cards[u.id] = b;
+    }
+
+    function buy(u) {
+      const c = cost(u);
+      if (game.total < c) return;
+      game.total -= c;
+      game.owned[u.id] = owned(u.id) + 1;
+      save();
+      refresh();
+    }
+
+    function refresh() {
+      document.getElementById('total').textContent = fmt(game.total);
+      document.getElementById('perClick').textContent = fmt(perClick());
+      document.getElementById('perSec').textContent = fmt(perSec());
+      // Show upgrades you've bought, plus the next couple you could reach
+      let highest = -1;
+      UPGRADES.forEach((u, i) => { if (owned(u.id) > 0) highest = i; });
+      UPGRADES.forEach((u, i) => {
+        const b = cards[u.id];
+        const c = cost(u);
+        const seen = owned(u.id) > 0 || i <= highest + 2 || game.total >= u.base * 0.5;
+        b.style.display = seen ? '' : 'none';
+        b.querySelector('.cost').textContent = 'Cost: ' + fmt(c);
+        b.querySelector('.owned').textContent = owned(u.id) || '';
+        b.disabled = game.total < c;
+        b.classList.toggle('can', game.total >= c);
+      });
+    }
+
+    // ----- Clicking -----
+    function popText(x, y, text) {
+      const el = document.createElement('div');
+      el.className = 'pop';
+      el.textContent = text;
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 900);
+    }
+
+    document.getElementById('big').addEventListener('click', (e) => {
+      const gain = perClick();
+      game.total += gain;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX || rect.left + rect.width / 2;
+      const y = e.clientY || rect.top + rect.height / 3;
+      popText(x + (Math.random() * 30 - 15), y - 10, '+' + fmt(gain));
+      refresh();
+    });
+
+    // ----- Golden 67 -----
+    const golden = document.getElementById('golden');
+    const toast = document.getElementById('toast');
+    let goldenTimer;
+    function showToast(text) {
+      toast.textContent = text;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+    function scheduleGolden() {
+      setTimeout(() => {
+        golden.style.left = (20 + Math.random() * (window.innerWidth - 130)) + 'px';
+        golden.style.top = (80 + Math.random() * (window.innerHeight - 190)) + 'px';
+        golden.style.display = 'block';
+        goldenTimer = setTimeout(() => { golden.style.display = 'none'; scheduleGolden(); }, 8000);
+      }, 30000 + Math.random() * 60000);
+    }
+    golden.addEventListener('click', (e) => {
+      clearTimeout(goldenTimer);
+      golden.style.display = 'none';
+      const bonus = Math.max(67, perClick() * 67, perSec() * 67);
+      game.total += bonus;
+      popText(e.clientX, e.clientY, '+' + fmt(bonus));
+      showToast('✨ Golden 67! +' + fmt(bonus));
+      save();
+      refresh();
+      scheduleGolden();
+    });
+    scheduleGolden();
+
+    // ----- Earn per second -----
+    let last = performance.now();
+    function tick(now) {
+      const dt = Math.min((now - last) / 1000, 1);
+      last = now;
+      const ps = perSec();
+      if (ps > 0) { game.total += ps * dt; refresh(); }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+    setInterval(save, 3000);
+    window.addEventListener('beforeunload', save);
+    document.addEventListener('visibilitychange', save);
+
+    document.getElementById('reset').onclick = () => {
+      if (!confirm('Start over from 0? This erases your progress.')) return;
+      game = { total: 0, owned: {} };
+      save();
+      refresh();
+    };
+
+    refresh();
+  </script>
+</body>
+</html>

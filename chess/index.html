@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    :root {
+      --sq-light: #eed9b6;
+      --sq-dark: #b58863;
+      --board-size: min(92vw, 520px);
+    }
+    h1 { margin: 0 0 4px; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 8px 0; }
+    #status { font-size: 1.2rem; font-weight: 600; margin: 10px 0; min-height: 1.5em; text-align: center; }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      width: var(--board-size);
+      height: var(--board-size);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px var(--shadow);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .sq {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .sq.light { background: var(--sq-light); }
+    .sq.dark { background: var(--sq-dark); }
+    .sq.last.light { background: #f3e78b; }
+    .sq.last.dark { background: #d6c15a; }
+    .sq.sel { box-shadow: inset 0 0 0 4px #2457c5; }
+    .sq.check { background: radial-gradient(circle, #ff4d4d 0%, #e02020 45%, transparent 80%) !important; }
+    .sq.target::after {
+      content: '';
+      position: absolute;
+      width: 30%; height: 30%;
+      border-radius: 50%;
+      background: rgba(20, 20, 40, 0.3);
+    }
+    .sq.target.capture::after {
+      width: 88%; height: 88%;
+      background: none;
+      border: 5px solid rgba(20, 20, 40, 0.3);
+      box-sizing: border-box;
+    }
+    .piece {
+      font-size: calc(var(--board-size) / 8 * 0.78);
+      line-height: 1;
+      position: relative;
+      z-index: 1;
+      pointer-events: none;
+      font-family: "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", serif;
+    }
+    .piece.w {
+      color: #fdfdfd;
+      text-shadow: 0 0 2px #000, 0 0 1px #000, 1px 1px 0 #333, -1px -1px 0 #333, 1px -1px 0 #333, -1px 1px 0 #333;
+    }
+    .piece.b {
+      color: #1b1b1b;
+      text-shadow: 0 0 1px #fff8;
+    }
+    .coord {
+      position: absolute;
+      font-size: 0.7rem;
+      font-weight: 700;
+      opacity: 0.7;
+      pointer-events: none;
+    }
+    .coord.file { right: 3px; bottom: 1px; }
+    .coord.rank { left: 3px; top: 1px; }
+    .sq.light .coord { color: var(--sq-dark); }
+    .sq.dark .coord { color: var(--sq-light); }
+    .captured {
+      display: flex; gap: 2px; flex-wrap: wrap; justify-content: center;
+      min-height: 1.6em; font-size: 1.3rem; margin: 6px 0; color: var(--muted);
+      width: var(--board-size);
+    }
+    #promo {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: none; align-items: center; justify-content: center;
+      z-index: 10;
+    }
+    #promo.show { display: flex; }
+    #promo .box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      text-align: center;
+    }
+    #promo .choices { display: flex; gap: 8px; margin-top: 10px; }
+    #promo button { font-size: 2.4rem; width: 64px; height: 64px; padding: 0; background: var(--sq-light); }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>Chess</h1>
+    <div class="controls">
+      <button id="mode2p" class="active">2 Players</button>
+      <button id="modeAI">vs Computer</button>
+      <button id="newGame">New Game</button>
+      <button id="undo">Undo</button>
+    </div>
+    <div id="status"></div>
+    <div class="captured" id="capB" title="Pieces black has taken"></div>
+    <div id="board"></div>
+    <div class="captured" id="capW" title="Pieces white has taken"></div>
+  </main>
+
+  <div id="promo">
+    <div class="box">
+      <div>Pick a piece</div>
+      <div class="choices"></div>
+    </div>
+  </div>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script>
+    // ---------- Rules ----------
+    const START = ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'];
+    const KN = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+    const KG = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+    const ORTH = [[-1,0],[1,0],[0,-1],[0,1]];
+    const DIAG = [[-1,-1],[-1,1],[1,-1],[1,1]];
+    const GLYPH = { k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟' };
+    const VS = '︎'; // show as a chess symbol, not an emoji
+
+    const colorOf = p => p === '.' ? null : (p === p.toUpperCase() ? 'w' : 'b');
+    const inB = (r, c) => r >= 0 && r < 8 && c >= 0 && c < 8;
+    const other = t => t === 'w' ? 'b' : 'w';
+
+    function initialState() {
+      return { b: START.map(r => r.split('')), turn: 'w', castle: { K: true, Q: true, k: true, q: true }, ep: null };
+    }
+
+    function attacked(b, r, c, by) {
+      const pd = by === 'w' ? 1 : -1;
+      const P = by === 'w' ? 'P' : 'p';
+      for (const dc of [-1, 1]) {
+        const rr = r + pd, cc = c + dc;
+        if (inB(rr, cc) && b[rr][cc] === P) return true;
+      }
+      const N = by === 'w' ? 'N' : 'n';
+      for (const [dr, dc] of KN) if (inB(r + dr, c + dc) && b[r + dr][c + dc] === N) return true;
+      const K = by === 'w' ? 'K' : 'k';
+      for (const [dr, dc] of KG) if (inB(r + dr, c + dc) && b[r + dr][c + dc] === K) return true;
+      const R = by === 'w' ? 'R' : 'r', B = by === 'w' ? 'B' : 'b', Q = by === 'w' ? 'Q' : 'q';
+      for (const [dirs, A] of [[ORTH, R], [DIAG, B]]) {
+        for (const [dr, dc] of dirs) {
+          let rr = r + dr, cc = c + dc;
+          while (inB(rr, cc)) {
+            const p = b[rr][cc];
+            if (p !== '.') { if (p === A || p === Q) return true; break; }
+            rr += dr; cc += dc;
+          }
+        }
+      }
+      return false;
+    }
+
+    function findKing(b, t) {
+      const K = t === 'w' ? 'K' : 'k';
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (b[r][c] === K) return [r, c];
+      return null;
+    }
+
+    function inCheck(s, t) {
+      const k = findKing(s.b, t);
+      return k ? attacked(s.b, k[0], k[1], other(t)) : false;
+    }
+
+    function pseudoMoves(s) {
+      const out = [];
+      const { b, turn } = s;
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const p = b[r][c];
+        if (colorOf(p) !== turn) continue;
+        const t = p.toLowerCase();
+        const add = (tr, tc, extra) => out.push(Object.assign({ fr: r, fc: c, tr, tc }, extra));
+        if (t === 'p') {
+          const dir = turn === 'w' ? -1 : 1, start = turn === 'w' ? 6 : 1, last = turn === 'w' ? 0 : 7;
+          if (inB(r + dir, c) && b[r + dir][c] === '.') {
+            add(r + dir, c, { promo: r + dir === last });
+            if (r === start && b[r + 2 * dir][c] === '.') add(r + 2 * dir, c, { double: true });
+          }
+          for (const dc of [-1, 1]) {
+            const tr = r + dir, tc = c + dc;
+            if (!inB(tr, tc)) continue;
+            const col = colorOf(b[tr][tc]);
+            if (col && col !== turn) add(tr, tc, { promo: tr === last, cap: true });
+            else if (s.ep && s.ep[0] === tr && s.ep[1] === tc) add(tr, tc, { ep: true, cap: true });
+          }
+        } else if (t === 'n' || t === 'k') {
+          for (const [dr, dc] of (t === 'n' ? KN : KG)) {
+            const tr = r + dr, tc = c + dc;
+            if (!inB(tr, tc)) continue;
+            const col = colorOf(b[tr][tc]);
+            if (col !== turn) add(tr, tc, { cap: !!col });
+          }
+        } else {
+          const dirs = t === 'r' ? ORTH : t === 'b' ? DIAG : ORTH.concat(DIAG);
+          for (const [dr, dc] of dirs) {
+            let tr = r + dr, tc = c + dc;
+            while (inB(tr, tc)) {
+              const col = colorOf(b[tr][tc]);
+              if (col === turn) break;
+              add(tr, tc, { cap: !!col });
+              if (col) break;
+              tr += dr; tc += dc;
+            }
+          }
+        }
+      }
+      return out;
+    }
+
+    function makeMove(s, m) {
+      const b = s.b.map(row => row.slice());
+      const p = b[m.fr][m.fc];
+      const turn = s.turn;
+      let placed = p;
+      if (m.promo) {
+        const pick = m.promoTo || 'q';
+        placed = turn === 'w' ? pick.toUpperCase() : pick;
+      }
+      b[m.tr][m.tc] = placed;
+      b[m.fr][m.fc] = '.';
+      if (m.ep) b[m.fr][m.tc] = '.';
+      if (m.castle) {
+        const row = m.fr;
+        if (m.tc === 6) { b[row][5] = b[row][7]; b[row][7] = '.'; }
+        else { b[row][3] = b[row][0]; b[row][0] = '.'; }
+      }
+      const castle = Object.assign({}, s.castle);
+      if (p === 'K') castle.K = castle.Q = false;
+      if (p === 'k') castle.k = castle.q = false;
+      const touch = (r, c) => {
+        if (r === 7 && c === 7) castle.K = false;
+        if (r === 7 && c === 0) castle.Q = false;
+        if (r === 0 && c === 7) castle.k = false;
+        if (r === 0 && c === 0) castle.q = false;
+      };
+      touch(m.fr, m.fc); touch(m.tr, m.tc);
+      const ep = m.double ? [(m.fr + m.tr) / 2, m.fc] : null;
+      return { b, turn: other(turn), castle, ep };
+    }
+
+    function legalMoves(s) {
+      const t = s.turn, opp = other(t);
+      const moves = pseudoMoves(s).filter(m => {
+        const n = makeMove(s, m);
+        const k = findKing(n.b, t);
+        return !attacked(n.b, k[0], k[1], opp);
+      });
+      // Castling
+      const row = t === 'w' ? 7 : 0;
+      const K = t === 'w' ? 'K' : 'k', R = t === 'w' ? 'R' : 'r';
+      const b = s.b;
+      if (b[row][4] === K && !attacked(b, row, 4, opp)) {
+        if (s.castle[t === 'w' ? 'K' : 'k'] && b[row][5] === '.' && b[row][6] === '.' && b[row][7] === R &&
+            !attacked(b, row, 5, opp) && !attacked(b, row, 6, opp)) {
+          moves.push({ fr: row, fc: 4, tr: row, tc: 6, castle: true });
+        }
+        if (s.castle[t === 'w' ? 'Q' : 'q'] && b[row][1] === '.' && b[row][2] === '.' && b[row][3] === '.' && b[row][0] === R &&
+            !attacked(b, row, 3, opp) && !attacked(b, row, 2, opp)) {
+          moves.push({ fr: row, fc: 4, tr: row, tc: 2, castle: true });
+        }
+      }
+      return moves;
+    }
+
+    function onlyKings(b) {
+      for (const row of b) for (const p of row) if (p !== '.' && p.toLowerCase() !== 'k') return false;
+      return true;
+    }
+
+    // ---------- Computer player ----------
+    const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+
+    function evaluate(b) {
+      let s = 0;
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const p = b[r][c];
+        if (p === '.') continue;
+        const t = p.toLowerCase(), w = p !== t;
+        let v = VAL[t];
+        const center = 3.5 - (Math.abs(r - 3.5) + Math.abs(c - 3.5)) / 2;
+        if (t === 'n' || t === 'b') v += center * 8;
+        if (t === 'q') v += center * 2;
+        if (t === 'p') v += (w ? 6 - r : r - 1) * 6 + (c >= 2 && c <= 5 ? 6 : 0);
+        s += w ? v : -v;
+      }
+      return s;
+    }
+
+    function orderMoves(s, moves) {
+      return moves.sort((a, b2) => {
+        const va = a.cap ? (VAL[(s.b[a.tr][a.tc] || 'p').toLowerCase()] || 100) : 0;
+        const vb = b2.cap ? (VAL[(s.b[b2.tr][b2.tc] || 'p').toLowerCase()] || 100) : 0;
+        return vb - va;
+      });
+    }
+
+    function negamax(s, depth, alpha, beta) {
+      const moves = legalMoves(s);
+      if (moves.length === 0) return inCheck(s, s.turn) ? -100000 - depth : 0;
+      if (depth === 0) return (s.turn === 'w' ? 1 : -1) * evaluate(s.b);
+      let best = -Infinity;
+      for (const m of orderMoves(s, moves)) {
+        const v = -negamax(makeMove(s, m), depth - 1, -beta, -alpha);
+        if (v > best) best = v;
+        if (v > alpha) alpha = v;
+        if (alpha >= beta) break;
+      }
+      return best;
+    }
+
+    function computerMove(s) {
+      const moves = orderMoves(s, legalMoves(s));
+      let best = -Infinity, choice = moves[0];
+      for (const m of moves) {
+        const v = -negamax(makeMove(s, m), 2, -Infinity, Infinity) + Math.random() * 5;
+        if (v > best) { best = v; choice = m; }
+      }
+      return choice;
+    }
+
+    // ---------- Screen ----------
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    let state, history, selected, targets, vsAI = false, gameOver, lastMove, thinking = false;
+    const capturedBy = { w: [], b: [] };
+
+    const squares = [];
+    for (let r = 0; r < 8; r++) {
+      squares.push([]);
+      for (let c = 0; c < 8; c++) {
+        const sq = document.createElement('div');
+        sq.className = 'sq ' + ((r + c) % 2 ? 'dark' : 'light');
+        sq.addEventListener('click', () => clickSquare(r, c));
+        boardEl.appendChild(sq);
+        squares[r].push(sq);
+      }
+    }
+
+    function newGame() {
+      state = initialState();
+      history = [];
+      selected = null; targets = []; lastMove = null; gameOver = false; thinking = false;
+      capturedBy.w = []; capturedBy.b = [];
+      render();
+    }
+
+    function render() {
+      const checkK = inCheck(state, state.turn) ? findKing(state.b, state.turn) : null;
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const sq = squares[r][c];
+        sq.className = 'sq ' + ((r + c) % 2 ? 'dark' : 'light');
+        const p = state.b[r][c];
+        let html = p === '.' ? '' : `<span class="piece ${colorOf(p)}">${GLYPH[p.toLowerCase()]}${VS}</span>`;
+        if (c === 0) html += `<span class="coord rank">${8 - r}</span>`;
+        if (r === 7) html += `<span class="coord file">${'abcdefgh'[c]}</span>`;
+        sq.innerHTML = html;
+        if (lastMove && ((lastMove.fr === r && lastMove.fc === c) || (lastMove.tr === r && lastMove.tc === c))) sq.classList.add('last');
+        if (selected && selected[0] === r && selected[1] === c) sq.classList.add('sel');
+        const t = targets.find(m => m.tr === r && m.tc === c);
+        if (t) { sq.classList.add('target'); if (t.cap) sq.classList.add('capture'); }
+        if (checkK && checkK[0] === r && checkK[1] === c) sq.classList.add('check');
+      }
+      const show = (arr) => arr.map(p => `<span>${GLYPH[p]}${VS}</span>`).join('');
+      document.getElementById('capW').innerHTML = show(capturedBy.w);
+      document.getElementById('capB').innerHTML = show(capturedBy.b);
+      updateStatus();
+    }
+
+    function updateStatus() {
+      const moves = legalMoves(state);
+      const name = state.turn === 'w' ? 'White' : 'Black';
+      const check = inCheck(state, state.turn);
+      if (moves.length === 0) {
+        gameOver = true;
+        if (check) {
+          const winner = state.turn === 'w' ? 'Black' : 'White';
+          statusEl.textContent = vsAI ? (winner === 'White' ? 'Checkmate! You win! 🎉' : 'Checkmate! The computer wins.') : `Checkmate! ${winner} wins! 🎉`;
+        } else {
+          statusEl.textContent = 'Stalemate. It\'s a draw!';
+        }
+        return;
+      }
+      if (onlyKings(state.b)) { gameOver = true; statusEl.textContent = 'Only kings left. It\'s a draw!'; return; }
+      if (vsAI && state.turn === 'b') statusEl.textContent = 'Computer is thinking…';
+      else statusEl.textContent = (vsAI ? 'Your turn' : `${name}'s turn`) + (check ? ' – Check!' : '');
+    }
+
+    function clickSquare(r, c) {
+      if (gameOver || thinking) return;
+      if (vsAI && state.turn === 'b') return;
+      const move = targets.find(m => m.tr === r && m.tc === c);
+      if (move) {
+        if (move.promo) { askPromotion(state.turn, (pick) => doMove(Object.assign({}, move, { promoTo: pick }))); return; }
+        doMove(move);
+        return;
+      }
+      if (colorOf(state.b[r][c]) === state.turn) {
+        selected = [r, c];
+        targets = legalMoves(state).filter(m => m.fr === r && m.fc === c);
+      } else {
+        selected = null; targets = [];
+      }
+      render();
+    }
+
+    function doMove(m) {
+      const victim = m.ep ? state.b[m.fr][m.tc] : state.b[m.tr][m.tc];
+      history.push({ state, lastMove, capW: capturedBy.w.slice(), capB: capturedBy.b.slice() });
+      if (victim && victim !== '.') capturedBy[state.turn].push(victim.toLowerCase());
+      state = makeMove(state, m);
+      lastMove = m;
+      selected = null; targets = [];
+      render();
+      if (!gameOver && vsAI && state.turn === 'b') {
+        thinking = true;
+        setTimeout(() => {
+          const reply = computerMove(state);
+          thinking = false;
+          if (reply) doMove(reply);
+        }, 250);
+      }
+    }
+
+    function undo() {
+      if (thinking || history.length === 0) return;
+      let steps = vsAI ? (state.turn === 'w' ? 2 : 1) : 1;
+      let h;
+      while (steps-- > 0 && history.length) h = history.pop();
+      state = h.state; lastMove = h.lastMove;
+      capturedBy.w = h.capW; capturedBy.b = h.capB;
+      gameOver = false; selected = null; targets = [];
+      render();
+    }
+
+    function askPromotion(turn, done) {
+      const box = document.getElementById('promo');
+      const choices = box.querySelector('.choices');
+      choices.innerHTML = '';
+      for (const p of ['q', 'r', 'b', 'n']) {
+        const btn = document.createElement('button');
+        btn.innerHTML = `<span class="piece ${turn}" style="font-size:2.4rem">${GLYPH[p]}${VS}</span>`;
+        btn.onclick = () => { box.classList.remove('show'); done(p); };
+        choices.appendChild(btn);
+      }
+      box.classList.add('show');
+    }
+
+    const btn2p = document.getElementById('mode2p');
+    const btnAI = document.getElementById('modeAI');
+    btn2p.onclick = () => { vsAI = false; btn2p.classList.add('active'); btnAI.classList.remove('active'); newGame(); };
+    btnAI.onclick = () => { vsAI = true; btnAI.classList.add('active'); btn2p.classList.remove('active'); newGame(); };
+    document.getElementById('newGame').onclick = newGame;
+    document.getElementById('undo').onclick = undo;
+
+    newGame();
+  </script>
+</body>
+</html>
