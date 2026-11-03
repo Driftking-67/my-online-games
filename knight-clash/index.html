@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knight Clash – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    h1 { margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 16px; text-align: center; }
+    .hidden { display: none !important; }
+    #setup { width: 100%; display: flex; flex-direction: column; align-items: center; }
+
+    /* ----- Builder ----- */
+    .builders {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      width: min(100%, 900px);
+    }
+    .builder {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 6px 20px var(--shadow);
+    }
+    .builder h2 { margin: 0 0 10px; font-size: 1.15rem; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .who-toggle { display: flex; gap: 4px; }
+    .who-toggle button { padding: 4px 10px; font-size: 0.85rem; }
+    .preview {
+      display: block;
+      width: 100%;
+      height: 170px;
+      border-radius: 10px;
+      background: linear-gradient(#9fd3f5, #d9effa 70%, #b8a17c 70%);
+      margin-bottom: 12px;
+    }
+    .field { margin-bottom: 12px; }
+    .field > label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+    .field input[type="text"] {
+      width: 100%; font: inherit; padding: 8px 10px;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text);
+    }
+    .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+    .swatch {
+      width: 30px; height: 30px; padding: 0; border-radius: 50%;
+      border: 2px solid var(--border);
+    }
+    .swatch.on { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { padding: 6px 10px; font-size: 0.9rem; }
+    .chip.emblem { width: 38px; padding: 6px 0; font-size: 1.1rem; }
+    .weapon-desc { font-size: 0.82rem; color: var(--muted); margin-top: 5px; min-height: 1.2em; }
+    .stats-head { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); font-weight: 600; margin-bottom: 5px; }
+    .points-left { color: var(--accent); }
+    .stat { display: grid; grid-template-columns: 82px 30px 1fr 30px; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .stat button { padding: 2px 0; width: 30px; font-weight: 700; }
+    .pips { display: flex; gap: 3px; }
+    .pip { flex: 1; height: 10px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); }
+    .pip.on { background: var(--accent); border-color: var(--accent); }
+    .setup-bottom { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin: 18px 0 6px; }
+    #fightBtn { font-size: 1.2rem; padding: 12px 34px; }
+    .difficulty { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 0.9rem; }
+    .difficulty button { padding: 5px 10px; font-size: 0.85rem; }
+
+    /* ----- Arena ----- */
+    #arenaWrap { width: min(100%, 960px); }
+    #arena {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px var(--shadow);
+      background: #6fb3e0;
+    }
+    .arena-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .keys {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px;
+      width: min(100%, 960px); margin-top: 12px;
+    }
+    .keybox {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; font-size: 0.9rem; color: var(--muted);
+    }
+    .keybox b { color: var(--text); }
+    kbd {
+      display: inline-block; padding: 0 6px; border-radius: 4px;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+      font: 600 0.8rem system-ui, sans-serif;
+    }
+    .touch-note { color: var(--danger); margin-top: 10px; text-align: center; display: none; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>⚔️ Knight Clash</h1>
+
+    <!-- ===== Setup ===== -->
+    <section id="setup">
+      <p class="sub">Design your knights, then battle! First to win 2 rounds is the champion.</p>
+      <div class="builders" id="builders"></div>
+      <div class="setup-bottom">
+        <div class="difficulty" id="diffBox">Bot level:
+          <button data-d="easy">Easy</button>
+          <button data-d="normal">Normal</button>
+          <button data-d="hard">Hard</button>
+        </div>
+        <button id="fightBtn" class="primary">⚔️ Fight!</button>
+      </div>
+      <p class="touch-note" id="touchNote">Knight Clash needs a keyboard, so it won't work on a phone or tablet.</p>
+    </section>
+
+    <!-- ===== Battle ===== -->
+    <section id="battle" class="hidden" style="display:flex;flex-direction:column;align-items:center;width:100%">
+      <div id="arenaWrap">
+        <canvas id="arena" width="960" height="540"></canvas>
+        <div class="arena-bar">
+          <button id="backBtn">← Change knights</button>
+          <div style="display:flex;gap:8px">
+            <button id="soundBtn">🔊 Sound</button>
+            <button id="rematchBtn">↻ Restart match</button>
+          </div>
+        </div>
+      </div>
+      <div class="keys">
+        <div class="keybox"><b id="k1name">Player 1</b><br>
+          Move <kbd>A</kbd> <kbd>D</kbd> · Jump <kbd>W</kbd> · Block <kbd>S</kbd> · Attack <kbd>F</kbd> or <kbd>Space</kbd></div>
+        <div class="keybox" id="p2keys"><b id="k2name">Player 2</b><br>
+          Move <kbd>←</kbd> <kbd>→</kbd> · Jump <kbd>↑</kbd> · Block <kbd>↓</kbd> · Attack <kbd>/</kbd> or <kbd>Right Shift</kbd></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script>
+  (function () {
+    // ================= Options =================
+    const WEAPONS = {
+      sword:  { name: 'Sword',  icon: '🗡️', dmg: 10, reach: 82,  windup: 9,  active: 6, recover: 11, kb: 5,  heavy: false, desc: 'Balanced and quick.' },
+      axe:    { name: 'Axe',    icon: '🪓', dmg: 15, reach: 76,  windup: 15, active: 6, recover: 15, kb: 7,  heavy: true,  desc: 'Slower, hits hard, chips through blocks.' },
+      spear:  { name: 'Spear',  icon: '🔱', dmg: 8,  reach: 118, windup: 11, active: 7, recover: 13, kb: 4,  heavy: false, desc: 'Long reach. Hit them from far away.' },
+      hammer: { name: 'Hammer', icon: '🔨', dmg: 20, reach: 70,  windup: 22, active: 6, recover: 20, kb: 12, heavy: true,  desc: 'Very slow, huge damage and knockback.' },
+    };
+    const ARMOR = ['#c3cad4', '#d4af37', '#4a4a57', '#a8673a', '#e8e8ee', '#7d8fa6'];
+    const ACCENT = ['#d63b3b', '#2e6bd1', '#2f9e5a', '#7d4bc4', '#e67e22', '#e84393', '#1abc9c', '#f1c40f'];
+    const EMBLEMS = ['★', '♥', '⚡', '☀', '☾', '✚', '♞', '♛', '🐉', '🦁'];
+    const STAT_MAX = 6, POINTS = 9;
+    const STATS = [['str', 'Strength'], ['spd', 'Speed'], ['def', 'Defense']];
+
+    const SAVE_KEY = 'knight-clash-v1';
+    let setup = {
+      knights: [
+        { name: 'Sir Brave', armor: ARMOR[0], accent: ACCENT[0], emblem: '★', weapon: 'sword', str: 3, spd: 3, def: 3 },
+        { name: 'Lady Storm', armor: ARMOR[2], accent: ACCENT[1], emblem: '⚡', weapon: 'spear', str: 3, spd: 3, def: 3 },
+      ],
+      p2Bot: true,
+      difficulty: 'normal',
+    };
+    try {
+      const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+      if (s && s.knights && s.knights.length === 2) setup = Object.assign(setup, s);
+    } catch (e) {}
+    const saveSetup = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(setup)); } catch (e) {} };
+
+    // ================= Drawing a knight =================
+    function shade(hex, amt) {
+      const n = parseInt(hex.slice(1), 16);
+      const f = v => Math.max(0, Math.min(255, Math.round(v + amt)));
+      return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+    }
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function drawWeapon(ctx, type, armor) {
+      // Drawn pointing up the -y direction from the hand at (0,0)
+      ctx.lineCap = 'round';
+      if (type === 'sword') {
+        ctx.fillStyle = '#6b4a2a'; ctx.fillRect(-3, -2, 6, 14);           // grip
+        ctx.fillStyle = '#c9a43a'; ctx.fillRect(-12, -6, 24, 5);          // guard
+        ctx.fillStyle = '#e4e9ef';
+        ctx.beginPath(); ctx.moveTo(-4, -6); ctx.lineTo(4, -6); ctx.lineTo(3, -58); ctx.lineTo(0, -66); ctx.lineTo(-3, -58); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#9aa4ae'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(0, -60); ctx.stroke();
+      } else if (type === 'axe') {
+        ctx.strokeStyle = '#7a5530'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(0, -58); ctx.stroke();
+        ctx.fillStyle = '#cfd5dc';
+        ctx.beginPath(); ctx.moveTo(2, -54); ctx.quadraticCurveTo(26, -62, 24, -40); ctx.quadraticCurveTo(20, -34, 2, -38); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#8b939c'; ctx.lineWidth = 1.5; ctx.stroke();
+      } else if (type === 'spear') {
+        ctx.strokeStyle = '#8a6237'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 22); ctx.lineTo(0, -92); ctx.stroke();
+        ctx.fillStyle = '#e4e9ef';
+        ctx.beginPath(); ctx.moveTo(0, -112); ctx.lineTo(6, -94); ctx.lineTo(0, -88); ctx.lineTo(-6, -94); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = armor; ctx.fillRect(-4, -88, 8, 4);
+      } else if (type === 'hammer') {
+        ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(0, -52); ctx.stroke();
+        ctx.fillStyle = '#7d858e'; roundRect(ctx, -16, -70, 32, 20, 3); ctx.fill();
+        ctx.fillStyle = '#9ba3ac'; ctx.fillRect(-16, -70, 32, 5);
+      }
+    }
+
+    // pose: { walk, armAngle, thrust, block, hurt, ko }
+    function drawKnight(ctx, k, x, y, facing, pose) {
+      pose = pose || {};
+      ctx.save();
+      ctx.translate(x, y);
+      if (pose.ko) { ctx.rotate(-facing * Math.min(1, pose.ko) * 1.45); }
+      ctx.scale(facing, 1);
+      const armor = k.armor, dark = shade(k.armor, -45), accent = k.accent;
+
+      // shadow
+      if (!pose.ko) {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.beginPath(); ctx.ellipse(0, 0, 30, 6, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      const lift = pose.air ? -2 : 0;
+      // legs
+      const sw = Math.sin(pose.walk || 0) * 8;
+      ctx.fillStyle = dark;
+      roundRect(ctx, -12 + sw * 0.6, -38 + lift, 10, 36, 3); ctx.fill();
+      roundRect(ctx, 2 - sw * 0.6, -38 + lift, 10, 36, 3); ctx.fill();
+      ctx.fillStyle = '#3a2d22';
+      roundRect(ctx, -14 + sw * 0.6, -6 + lift, 14, 7, 2); ctx.fill();
+      roundRect(ctx, 1 - sw * 0.6, -6 + lift, 14, 7, 2); ctx.fill();
+
+      // cape behind
+      ctx.fillStyle = shade(accent, -30);
+      ctx.beginPath(); ctx.moveTo(-14, -82); ctx.quadraticCurveTo(-30 - (pose.walk ? 4 : 0), -50, -24, -26); ctx.lineTo(-8, -30); ctx.closePath(); ctx.fill();
+
+      // back arm with weapon
+      ctx.save();
+      ctx.translate(-6 + (pose.thrust || 0), -70);
+      ctx.rotate(pose.armAngle == null ? -0.5 : pose.armAngle);
+      ctx.fillStyle = dark; roundRect(ctx, -5, -2, 10, 26, 4); ctx.fill();
+      ctx.translate(0, 24);
+      ctx.rotate(pose.weaponRot != null ? pose.weaponRot : Math.PI / 2);
+      drawWeapon(ctx, k.weapon, accent);
+      ctx.restore();
+
+      // body
+      ctx.fillStyle = armor;
+      roundRect(ctx, -16, -86, 32, 50, 8); ctx.fill();
+      ctx.fillStyle = accent; // tabard
+      ctx.beginPath(); ctx.moveTo(-11, -78); ctx.lineTo(11, -78); ctx.lineTo(9, -34); ctx.lineTo(0, -28); ctx.lineTo(-9, -34); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#5a3f24'; ctx.fillRect(-16, -46, 32, 5); // belt
+      ctx.fillStyle = '#d9b44a'; ctx.fillRect(-3, -46, 6, 5);
+
+      // head / helmet
+      ctx.fillStyle = armor;
+      roundRect(ctx, -14, -116, 28, 32, 9); ctx.fill();
+      ctx.fillStyle = shade(armor, 25); ctx.fillRect(-14, -114, 28, 4);
+      ctx.fillStyle = '#16161c'; ctx.fillRect(2, -103, 13, 4); // visor slit
+      ctx.fillStyle = '#16161c'; ctx.fillRect(6, -97, 2, 6);
+      // plume
+      ctx.fillStyle = accent;
+      ctx.beginPath(); ctx.moveTo(-2, -115); ctx.quadraticCurveTo(-8, -138, -28, -130); ctx.quadraticCurveTo(-14, -124, -12, -112); ctx.closePath(); ctx.fill();
+
+      // front arm + shield
+      const sx = pose.block ? 24 : 16, sy = pose.block ? -96 : -78;
+      ctx.fillStyle = armor;
+      roundRect(ctx, 6, -82, 10, 22, 4); ctx.fill();
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.fillStyle = shade(accent, -10);
+      ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(14, 0); ctx.lineTo(14, 22); ctx.quadraticCurveTo(10, 38, 0, 44); ctx.quadraticCurveTo(-10, 38, -14, 22); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = shade(armor, -20); ctx.lineWidth = 3; ctx.stroke();
+      ctx.scale(facing, 1); // keep emblem readable
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(k.emblem, 0, 19);
+      ctx.restore();
+      ctx.restore();
+    }
+
+    // ================= Builder screen =================
+    const buildersEl = document.getElementById('builders');
+    const previews = [];
+    let previewT = 0;
+
+    function pointsUsed(k) { return k.str + k.spd + k.def; }
+
+    function renderBuilders() {
+      buildersEl.innerHTML = '';
+      previews.length = 0;
+      setup.knights.forEach((k, i) => {
+        const card = document.createElement('div');
+        card.className = 'builder';
+        const isBot = i === 1 && setup.p2Bot;
+        card.innerHTML = `
+          <h2><span>${i === 0 ? '🛡️ Player 1' : (isBot ? '🤖 Bot' : '🛡️ Player 2')}</span>
+            ${i === 1 ? `<span class="who-toggle"><button data-who="bot" class="${isBot ? 'active' : ''}">Bot</button><button data-who="p2" class="${isBot ? '' : 'active'}">Player 2</button></span>` : ''}
+          </h2>
+          <canvas class="preview" width="300" height="170"></canvas>
+          <div class="field"><label>Name</label><input type="text" maxlength="16" value=""></div>
+          <div class="field"><label>Armor</label><div class="swatches" data-k="armor"></div></div>
+          <div class="field"><label>Cape &amp; shield</label><div class="swatches" data-k="accent"></div></div>
+          <div class="field"><label>Shield emblem</label><div class="chips" data-k="emblem"></div></div>
+          <div class="field"><label>Weapon</label><div class="chips" data-k="weapon"></div><div class="weapon-desc"></div></div>
+          <div class="field">
+            <div class="stats-head"><span>Skills</span><span class="points-left"></span></div>
+            <div class="statrows"></div>
+          </div>`;
+        const nameInput = card.querySelector('input');
+        nameInput.value = k.name;
+        nameInput.addEventListener('input', () => { k.name = nameInput.value.trim() || (i ? 'Knight 2' : 'Knight 1'); saveSetup(); });
+
+        const sw = (key, list) => {
+          const box = card.querySelector(`[data-k="${key}"]`);
+          list.forEach(c => {
+            const b = document.createElement('button');
+            b.className = 'swatch' + (k[key] === c ? ' on' : '');
+            b.style.background = c;
+            b.title = c;
+            b.onclick = () => { k[key] = c; saveSetup(); renderBuilders(); };
+            box.appendChild(b);
+          });
+        };
+        sw('armor', ARMOR);
+        sw('accent', ACCENT);
+
+        const emb = card.querySelector('[data-k="emblem"]');
+        EMBLEMS.forEach(e => {
+          const b = document.createElement('button');
+          b.className = 'chip emblem' + (k.emblem === e ? ' active' : '');
+          b.textContent = e;
+          b.onclick = () => { k.emblem = e; saveSetup(); renderBuilders(); };
+          emb.appendChild(b);
+        });
+
+        const wp = card.querySelector('[data-k="weapon"]');
+        Object.entries(WEAPONS).forEach(([id, w]) => {
+          const b = document.createElement('button');
+          b.className = 'chip' + (k.weapon === id ? ' active' : '');
+          b.textContent = `${w.icon} ${w.name}`;
+          b.onclick = () => { k.weapon = id; saveSetup(); renderBuilders(); };
+          wp.appendChild(b);
+        });
+        card.querySelector('.weapon-desc').textContent = WEAPONS[k.weapon].desc;
+
+        const left = POINTS - pointsUsed(k);
+        card.querySelector('.points-left').textContent = `${left} point${left === 1 ? '' : 's'} left`;
+        const rows = card.querySelector('.statrows');
+        STATS.forEach(([key, label]) => {
+          const row = document.createElement('div');
+          row.className = 'stat';
+          row.innerHTML = `<span>${label}</span><button aria-label="Less ${label}">−</button><div class="pips">${
+            Array.from({ length: STAT_MAX }, (_, j) => `<span class="pip ${j < k[key] ? 'on' : ''}"></span>`).join('')
+          }</div><button aria-label="More ${label}">+</button>`;
+          const [minus, plus] = row.querySelectorAll('button');
+          minus.disabled = k[key] <= 0;
+          plus.disabled = k[key] >= STAT_MAX || left <= 0;
+          minus.onclick = () => { k[key]--; saveSetup(); renderBuilders(); };
+          plus.onclick = () => { k[key]++; saveSetup(); renderBuilders(); };
+          rows.appendChild(row);
+        });
+
+        card.querySelectorAll('[data-who]').forEach(b => {
+          b.onclick = () => { setup.p2Bot = b.dataset.who === 'bot'; saveSetup(); renderBuilders(); };
+        });
+
+        buildersEl.appendChild(card);
+        previews.push({ canvas: card.querySelector('.preview'), k, facing: i === 0 ? 1 : -1 });
+      });
+      document.getElementById('diffBox').classList.toggle('hidden', !setup.p2Bot);
+      document.querySelectorAll('#diffBox button').forEach(b => b.classList.toggle('active', b.dataset.d === setup.difficulty));
+    }
+
+    document.querySelectorAll('#diffBox button').forEach(b => {
+      b.onclick = () => { setup.difficulty = b.dataset.d; saveSetup(); renderBuilders(); };
+    });
+
+    function animatePreviews() {
+      if (!document.getElementById('setup').classList.contains('hidden')) {
+        previewT += 0.03;
+        for (const p of previews) {
+          const ctx = p.canvas.getContext('2d');
+          ctx.clearRect(0, 0, p.canvas.width, p.canvas.height);
+          const spear = p.k.weapon === 'spear';
+          drawKnight(ctx, p.k, 150, 154, p.facing, spear
+            ? { armAngle: -1.35, weaponRot: Math.PI / 2 + 1.35, thrust: Math.sin(previewT * 2) * 3 }
+            : { armAngle: -0.5 + Math.sin(previewT * 2) * 0.12 });
+        }
+      }
+      requestAnimationFrame(animatePreviews);
+    }
+
+    // ================= Sound =================
+    let soundOn = true, audio = null;
+    function beep(freq, dur, type, vol, slide) {
+      if (!soundOn) return;
+      try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.type = type || 'square';
+        o.frequency.setValueAtTime(freq, audio.currentTime);
+        if (slide) o.frequency.exponentialRampToValueAtTime(slide, audio.currentTime + dur);
+        g.gain.setValueAtTime(vol || 0.08, audio.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+        o.connect(g); g.connect(audio.destination);
+        o.start(); o.stop(audio.currentTime + dur);
+      } catch (e) {}
+    }
+    const sfx = {
+      swing: () => beep(420, 0.08, 'triangle', 0.04, 180),
+      hit: () => beep(160, 0.15, 'sawtooth', 0.1, 60),
+      clang: () => { beep(1300, 0.12, 'square', 0.05, 900); beep(1900, 0.08, 'triangle', 0.04); },
+      ko: () => beep(300, 0.6, 'sawtooth', 0.1, 50),
+      bell: () => { beep(880, 0.4, 'sine', 0.08); beep(1320, 0.3, 'sine', 0.05); },
+    };
+
+    // ================= Battle =================
+    const canvas = document.getElementById('arena');
+    const ctx = canvas.getContext('2d');
+    const CW = 960, CH = 540, GROUND = 470, LEFT = 50, RIGHT = 910;
+    const GRAV = 0.75;
+
+    // Background (drawn once)
+    const bg = document.createElement('canvas');
+    bg.width = CW; bg.height = CH;
+    (function drawBackground() {
+      const b = bg.getContext('2d');
+      const sky = b.createLinearGradient(0, 0, 0, GROUND);
+      sky.addColorStop(0, '#5aa7de'); sky.addColorStop(1, '#cfe9f7');
+      b.fillStyle = sky; b.fillRect(0, 0, CW, CH);
+      // sun
+      b.fillStyle = 'rgba(255,240,180,0.9)'; b.beginPath(); b.arc(820, 90, 36, 0, Math.PI * 2); b.fill();
+      // clouds
+      b.fillStyle = 'rgba(255,255,255,0.85)';
+      for (const [cx, cy, s] of [[150, 90, 1], [420, 60, 0.8], [650, 120, 0.9]]) {
+        for (const [dx, dy, r] of [[0, 0, 22], [24, -8, 26], [50, 0, 20], [26, 8, 20]]) {
+          b.beginPath(); b.arc(cx + dx * s, cy + dy * s, r * s, 0, Math.PI * 2); b.fill();
+        }
+      }
+      // hills
+      b.fillStyle = '#7fb069';
+      b.beginPath(); b.moveTo(0, 330);
+      for (let x = 0; x <= CW; x += 20) b.lineTo(x, 320 - Math.sin(x / 140) * 30 - Math.sin(x / 57) * 10);
+      b.lineTo(CW, CH); b.lineTo(0, CH); b.fill();
+      // castle walls
+      const stone = '#9a9387', stoneDark = '#7d766b';
+      b.fillStyle = stone; b.fillRect(0, 250, CW, 220);
+      for (let x = 0; x < CW; x += 40) { b.fillRect(x, 230, 24, 22); }
+      // towers
+      for (const tx of [40, 840]) {
+        b.fillStyle = stone; b.fillRect(tx, 150, 80, 320);
+        for (let x = tx; x < tx + 80; x += 20) b.fillRect(x, 132, 12, 20);
+        b.fillStyle = '#2e2a26'; roundRect(b, tx + 30, 200, 20, 34, 10); b.fill();
+      }
+      // gate
+      b.fillStyle = '#4b3a2a'; b.beginPath(); b.moveTo(420, 470); b.lineTo(420, 340); b.arc(480, 340, 60, Math.PI, 0); b.lineTo(540, 470); b.fill();
+      b.strokeStyle = '#2b2118'; b.lineWidth = 4;
+      for (let x = 432; x < 540; x += 18) { b.beginPath(); b.moveTo(x, 300); b.lineTo(x, 470); b.stroke(); }
+      // brick lines
+      b.strokeStyle = stoneDark; b.lineWidth = 1;
+      for (let y = 262; y < 470; y += 22) {
+        b.beginPath(); b.moveTo(0, y); b.lineTo(CW, y); b.stroke();
+        for (let x = (y / 22 % 2) * 30; x < CW; x += 60) { b.beginPath(); b.moveTo(x, y); b.lineTo(x, y + 22); b.stroke(); }
+      }
+      // banners
+      for (const [bx, col] of [[210, '#d63b3b'], [710, '#2e6bd1']]) {
+        b.fillStyle = col; b.beginPath(); b.moveTo(bx, 270); b.lineTo(bx + 44, 270); b.lineTo(bx + 44, 360); b.lineTo(bx + 22, 344); b.lineTo(bx, 360); b.fill();
+        b.fillStyle = '#f1c40f'; b.font = 'bold 26px serif'; b.textAlign = 'center'; b.fillText('⚔', bx + 22, 318);
+      }
+      // ground
+      const g = b.createLinearGradient(0, GROUND, 0, CH);
+      g.addColorStop(0, '#c2a77a'); g.addColorStop(1, '#a28a62');
+      b.fillStyle = g; b.fillRect(0, GROUND, CW, CH - GROUND);
+      b.fillStyle = 'rgba(0,0,0,0.08)';
+      for (let x = 0; x < CW; x += 64) b.fillRect(x, GROUND, 2, CH - GROUND);
+    })();
+
+    let fighters = [], particles = [], floaters = [], shake = 0;
+    let match = null; // { wins:[0,0], round, phase, timer, banner }
+    let running = false;
+    const keys = {}, pressed = {};
+
+    function statsOf(k) {
+      const w = WEAPONS[k.weapon];
+      return {
+        speed: 2.6 + k.spd * 0.32,
+        windup: Math.max(4, Math.round(w.windup * (1 - 0.05 * k.spd))),
+        recover: Math.max(5, Math.round(w.recover * (1 - 0.04 * k.spd))),
+        dmgMult: 1 + 0.09 * k.str,
+        defMult: 1 - 0.06 * k.def,
+      };
+    }
+
+    function makeFighter(k, x, facing, isBot) {
+      return {
+        k, w: WEAPONS[k.weapon], s: statsOf(k), isBot,
+        x, y: GROUND, vy: 0, kb: 0, facing,
+        hp: 100, shownHp: 100,
+        phase: 'idle', t: 0, hitDone: false,
+        blocking: false, stun: 0, walk: 0, moving: false, koT: 0,
+        ai: { cd: 30, blockT: 0, react: 0, wantBack: 0 },
+      };
+    }
+
+    function inputFor(f, i) {
+      if (f.isBot) return botInput(f, fighters[1 - i]);
+      if (i === 0) return {
+        left: keys.KeyA, right: keys.KeyD, jump: keys.KeyW, block: keys.KeyS,
+        attack: pressed.KeyF || pressed.Space,
+      };
+      return {
+        left: keys.ArrowLeft, right: keys.ArrowRight, jump: keys.ArrowUp, block: keys.ArrowDown,
+        attack: pressed.Slash || pressed.ShiftRight || pressed.Enter,
+      };
+    }
+
+    // ----- Bot brain -----
+    const LEVEL = {
+      easy:   { block: 0.15, cdMin: 50, cdMax: 110, react: 22, aggress: 0.5 },
+      normal: { block: 0.45, cdMin: 28, cdMax: 70,  react: 12, aggress: 0.75 },
+      hard:   { block: 0.75, cdMin: 14, cdMax: 40,  react: 6,  aggress: 0.95 },
+    };
+    function botInput(me, foe) {
+      const L = LEVEL[setup.difficulty] || LEVEL.normal;
+      const a = me.ai;
+      const out = { left: false, right: false, jump: false, block: false, attack: false };
+      const dist = Math.abs(foe.x - me.x);
+      const toward = foe.x > me.x ? 'right' : 'left', away = toward === 'right' ? 'left' : 'right';
+      if (a.cd > 0) a.cd--;
+
+      // Keep blocking for a moment once started
+      if (a.blockT > 0) { a.blockT--; out.block = true; return out; }
+
+      // React to an incoming swing
+      const foeSwinging = foe.phase === 'windup' && dist < foe.w.reach + 40;
+      if (foeSwinging) {
+        if (a.react <= 0) a.react = L.react;
+        a.react--;
+        if (a.react === 0 && Math.random() < L.block) { a.blockT = 18; out.block = true; return out; }
+      } else a.react = 0;
+
+      if (a.wantBack > 0) { a.wantBack--; out[away] = true; return out; }
+
+      const myReach = me.w.reach;
+      if (dist > myReach - 8) {
+        if (Math.random() < L.aggress) out[toward] = true;
+      } else if (a.cd <= 0) {
+        out.attack = true;
+        a.cd = L.cdMin + Math.random() * (L.cdMax - L.cdMin);
+        if (Math.random() < 0.25) a.wantBack = 12 + Math.random() * 15;
+      } else if (dist < myReach * 0.55) {
+        out[away] = true; // make some room
+      }
+      if (foe.phase === 'windup' && Math.random() < 0.01) out.jump = true;
+      return out;
+    }
+
+    // ----- Update one fighter -----
+    function step(f, i) {
+      const foe = fighters[1 - i];
+      const inp = inputFor(f, i);
+      const onGround = f.y >= GROUND;
+      f.moving = false;
+
+      if (f.phase === 'ko') {
+        f.koT = Math.min(1, f.koT + 0.05);
+      } else if (f.stun > 0) {
+        f.stun--;
+        f.blocking = false;
+      } else if (f.phase === 'windup' || f.phase === 'strike' || f.phase === 'recover') {
+        f.t++;
+        f.blocking = false;
+        if (f.phase === 'windup' && f.t >= f.s.windup) { f.phase = 'strike'; f.t = 0; f.hitDone = false; sfx.swing(); }
+        else if (f.phase === 'strike') {
+          if (!f.hitDone) tryHit(f, foe);
+          if (f.t >= f.w.active) { f.phase = 'recover'; f.t = 0; }
+        } else if (f.phase === 'recover' && f.t >= f.s.recover) { f.phase = 'idle'; f.t = 0; }
+      } else {
+        f.blocking = !!inp.block && onGround;
+        const dir = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+        const speed = f.s.speed * (f.blocking ? 0.3 : 1);
+        if (dir) { f.x += dir * speed; f.moving = true; }
+        if (inp.jump && onGround && !f.blocking) f.vy = -13.5;
+        if (inp.attack && !f.blocking) { f.phase = 'windup'; f.t = 0; }
+      }
+
+      // Physics
+      f.vy += GRAV;
+      f.y += f.vy;
+      if (f.y >= GROUND) { f.y = GROUND; f.vy = 0; }
+      f.x += f.kb;
+      f.kb *= 0.82;
+      if (Math.abs(f.kb) < 0.1) f.kb = 0;
+      f.x = Math.max(LEFT, Math.min(RIGHT, f.x));
+      if (f.moving && onGround) f.walk += 0.3; else f.walk *= 0.8;
+
+      if (f.phase !== 'ko') f.facing = foe.x >= f.x ? 1 : -1;
+      f.shownHp += (f.hp - f.shownHp) * 0.15;
+    }
+
+    function tryHit(f, foe) {
+      if (foe.phase === 'ko') return;
+      const front = (foe.x - f.x) * f.facing;
+      if (front <= -10 || front > f.w.reach + 22 || Math.abs(foe.y - f.y) > 80) return;
+      f.hitDone = true;
+      let dmg = f.w.dmg * f.s.dmgMult * foe.s.defMult;
+      const tipX = f.x + f.facing * Math.min(front, f.w.reach), tipY = f.y - 70;
+      if (foe.blocking && foe.stun === 0) {
+        dmg *= f.w.heavy ? 0.4 : 0.15;
+        foe.kb = f.facing * f.w.kb * 0.7;
+        spark(tipX, tipY, ['#fff6b0', '#ffffff', '#ffd23f'], 10);
+        sfx.clang();
+        addFloater(foe.x, foe.y - 135, 'Blocked!', '#ffffff');
+        if (f.w.heavy) foe.stun = 8;
+      } else {
+        foe.stun = 16;
+        foe.kb = f.facing * f.w.kb;
+        if (f.k.weapon === 'hammer') foe.vy = -6;
+        // interrupt their attack
+        if (foe.phase !== 'idle') { foe.phase = 'idle'; foe.t = 0; }
+        spark(tipX, tipY, ['#ff5a4a', '#ffd23f', '#ffffff'], 16);
+        shake = f.w.heavy ? 10 : 6;
+        sfx.hit();
+      }
+      dmg = Math.max(1, Math.round(dmg));
+      foe.hp = Math.max(0, foe.hp - dmg);
+      addFloater(foe.x, foe.y - 155, '-' + dmg, foe.blocking ? '#dddddd' : '#ff5a4a');
+      if (foe.hp <= 0) { foe.phase = 'ko'; foe.stun = 0; foe.kb = f.facing * 10; sfx.ko(); roundOver(fighters.indexOf(f)); }
+    }
+
+    function spark(x, y, colors, n) {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5;
+        particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1, life: 20 + Math.random() * 12, c: colors[i % colors.length] });
+      }
+    }
+    function addFloater(x, y, text, color) { floaters.push({ x, y, text, color, life: 50 }); }
+
+    // ----- Rounds -----
+    function startMatch() {
+      match = { wins: [0, 0], round: 0, phase: 'intro', timer: 0, banner: '', winner: -1 };
+      startRound();
+    }
+    function startRound() {
+      match.round++;
+      fighters = [
+        makeFighter(setup.knights[0], 250, 1, false),
+        makeFighter(setup.knights[1], 710, -1, setup.p2Bot),
+      ];
+      particles = []; floaters = [];
+      match.phase = 'intro'; match.timer = 100;
+      match.banner = `Round ${match.round}`;
+    }
+    function roundOver(winnerIdx) {
+      match.wins[winnerIdx]++;
+      match.phase = 'ko'; match.timer = 150;
+      const name = setup.knights[winnerIdx].name;
+      if (match.wins[winnerIdx] >= 2) {
+        match.winner = winnerIdx;
+        match.banner = `🏆 ${name} is the champion!`;
+        match.timer = 99999;
+      } else {
+        match.banner = `${name} wins the round!`;
+      }
+    }
+
+    // ----- Draw -----
+    function drawHud() {
+      const bw = 360, bh = 22;
+      fighters.forEach((f, i) => {
+        const x = i === 0 ? 30 : CW - 30 - bw, y = 26;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        roundRect(ctx, x - 4, y - 4, bw + 8, bh + 8, 8); ctx.fill();
+        ctx.fillStyle = '#5a1b1b';
+        roundRect(ctx, x, y, bw, bh, 5); ctx.fill();
+        const shownW = bw * Math.max(0, f.shownHp) / 100, realW = bw * f.hp / 100;
+        ctx.fillStyle = '#ffd9a0';
+        if (i === 0) ctx.fillRect(x, y, shownW, bh); else ctx.fillRect(x + bw - shownW, y, shownW, bh);
+        const hpColor = f.hp > 50 ? '#3fcf6a' : f.hp > 25 ? '#f1c40f' : '#e74c3c';
+        ctx.fillStyle = hpColor;
+        if (i === 0) ctx.fillRect(x, y, realW, bh); else ctx.fillRect(x + bw - realW, y, realW, bh);
+        // name + round wins
+        ctx.font = 'bold 18px system-ui, sans-serif';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4;
+        const label = `${f.k.emblem} ${f.k.name}${f.isBot ? ' 🤖' : ''}`;
+        ctx.textAlign = i === 0 ? 'left' : 'right';
+        const lx = i === 0 ? x : x + bw;
+        ctx.strokeText(label, lx, y + bh + 8); ctx.fillText(label, lx, y + bh + 8);
+        for (let r = 0; r < 2; r++) {
+          const cx = i === 0 ? x + bw - 10 - r * 22 : x + 10 + r * 22;
+          ctx.beginPath(); ctx.arc(cx, y + bh + 18, 7, 0, Math.PI * 2);
+          ctx.fillStyle = r < match.wins[i] ? '#f1c40f' : 'rgba(0,0,0,0.4)';
+          ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        }
+      });
+    }
+
+    function drawBanner(text, sub) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, CH / 2 - 60, CW, sub ? 120 : 90);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold 46px system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(text, CW / 2, CH / 2 - (sub ? 18 : 15));
+      if (sub) { ctx.font = '20px system-ui, sans-serif'; ctx.fillStyle = '#ffe9a8'; ctx.fillText(sub, CW / 2, CH / 2 + 30); }
+      ctx.restore();
+    }
+
+    function poseOf(f) {
+      const p = { walk: f.walk, block: f.blocking, hurt: f.stun > 0, air: f.y < GROUND, ko: f.phase === 'ko' ? f.koT : 0 };
+      const spear = f.k.weapon === 'spear';
+      if (spear) {
+        p.armAngle = -1.35;
+        p.weaponRot = Math.PI / 2 + 1.35; // hold the spear level
+        if (f.phase === 'windup') p.thrust = -14 * Math.min(1, f.t / f.s.windup);
+        else if (f.phase === 'strike') p.thrust = 26;
+        else if (f.phase === 'recover') p.thrust = 26 * (1 - f.t / f.s.recover);
+        else p.thrust = 0;
+      } else {
+        const rest = -0.5, back = -2.4, fwd = 0.9;
+        if (f.phase === 'windup') p.armAngle = rest + (back - rest) * Math.min(1, f.t / f.s.windup);
+        else if (f.phase === 'strike') p.armAngle = back + (fwd - back) * Math.min(1, (f.t + 1) / 3);
+        else if (f.phase === 'recover') p.armAngle = fwd + (rest - fwd) * Math.min(1, f.t / f.s.recover);
+        else p.armAngle = rest + Math.sin(f.walk) * 0.08;
+      }
+      if (f.stun > 0 && !spear) p.armAngle = -0.2;
+      return p;
+    }
+
+    function render() {
+      ctx.save();
+      if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.85; if (shake < 0.5) shake = 0; }
+      ctx.drawImage(bg, 0, 0);
+
+      // draw the one in front last (the one attacking)
+      const order = [0, 1].sort((a, b) => (fighters[a].phase === 'strike') - (fighters[b].phase === 'strike'));
+      for (const i of order) {
+        const f = fighters[i];
+        drawKnight(ctx, f.k, f.x, f.y, f.facing, poseOf(f));
+        if (f.stun > 0 && f.stun % 4 < 2 && f.phase !== 'ko') {
+          ctx.fillStyle = 'rgba(255,255,255,0.25)';
+          ctx.beginPath(); ctx.ellipse(f.x, f.y - 70, 34, 60, 0, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+
+      for (const p of particles) {
+        ctx.globalAlpha = Math.max(0, p.life / 30);
+        ctx.fillStyle = p.c;
+        ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      }
+      ctx.globalAlpha = 1;
+      ctx.font = 'bold 24px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const fl of floaters) {
+        ctx.globalAlpha = Math.min(1, fl.life / 20);
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 4;
+        ctx.strokeText(fl.text, fl.x, fl.y);
+        ctx.fillStyle = fl.color; ctx.fillText(fl.text, fl.x, fl.y);
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      drawHud();
+      if (match.phase === 'intro') drawBanner(match.timer > 40 ? match.banner : 'Fight!');
+      if (match.phase === 'ko') drawBanner(match.banner, match.winner >= 0 ? 'Press Enter or click "Restart match" to play again' : null);
+    }
+
+    // ----- Main loop (fixed 60 updates per second) -----
+    let acc = 0, lastT = performance.now();
+    function loop(now) {
+      if (!running) return;
+      acc += Math.min(100, now - lastT);
+      lastT = now;
+      while (acc >= 1000 / 60) {
+        update();
+        acc -= 1000 / 60;
+        for (const k in pressed) pressed[k] = false;
+      }
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    function update() {
+      if (match.phase === 'intro') {
+        match.timer--;
+        if (match.timer === 40) sfx.bell();
+        if (match.timer <= 0) match.phase = 'fight';
+      } else if (match.phase === 'fight') {
+        fighters.forEach(step);
+        // Keep knights from walking through each other
+        const [a, b] = fighters;
+        const minGap = 46;
+        if (Math.abs(a.x - b.x) < minGap && Math.abs(a.y - b.y) < 90) {
+          const mid = (a.x + b.x) / 2, s = a.x <= b.x ? -1 : 1;
+          a.x = mid + s * minGap / 2; b.x = mid - s * minGap / 2;
+          for (const f of [a, b]) f.x = Math.max(LEFT, Math.min(RIGHT, f.x));
+        }
+      } else if (match.phase === 'ko') {
+        fighters.forEach(step);
+        match.timer--;
+        if (match.timer <= 0 && match.winner < 0) startRound();
+      }
+      for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life--; }
+      particles = particles.filter(p => p.life > 0);
+      for (const fl of floaters) { fl.y -= 0.9; fl.life--; }
+      floaters = floaters.filter(fl => fl.life > 0);
+    }
+
+    // ----- Keys -----
+    const GAME_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Slash'];
+    addEventListener('keydown', (e) => {
+      if (!running) return;
+      if (GAME_KEYS.includes(e.code)) e.preventDefault();
+      if (!e.repeat) pressed[e.code] = true;
+      keys[e.code] = true;
+      if (e.code === 'Enter' && match && match.winner >= 0) startMatch();
+    });
+    addEventListener('keyup', (e) => { keys[e.code] = false; });
+    addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+    // ----- Screens -----
+    const setupEl = document.getElementById('setup'), battleEl = document.getElementById('battle');
+    document.getElementById('fightBtn').onclick = () => {
+      setupEl.classList.add('hidden');
+      battleEl.classList.remove('hidden');
+      document.getElementById('k1name').textContent = `${setup.knights[0].emblem} ${setup.knights[0].name}`;
+      document.getElementById('k2name').textContent = `${setup.knights[1].emblem} ${setup.knights[1].name}`;
+      document.getElementById('p2keys').classList.toggle('hidden', setup.p2Bot);
+      startMatch();
+      running = true;
+      lastT = performance.now();
+      requestAnimationFrame(loop);
+      canvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    document.getElementById('backBtn').onclick = () => {
+      running = false;
+      battleEl.classList.add('hidden');
+      setupEl.classList.remove('hidden');
+      renderBuilders();
+    };
+    document.getElementById('rematchBtn').onclick = () => startMatch();
+    const soundBtn = document.getElementById('soundBtn');
+    soundBtn.onclick = () => { soundOn = !soundOn; soundBtn.textContent = soundOn ? '🔊 Sound' : '🔇 Muted'; };
+
+    if (matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches) {
+      document.getElementById('touchNote').style.display = 'block';
+    }
+
+    renderBuilders();
+    requestAnimationFrame(animatePreviews);
+  })();
+  </script>
+</body>
+</html>
