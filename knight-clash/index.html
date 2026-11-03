@@ -66,6 +66,54 @@
     .difficulty { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 0.9rem; }
     .difficulty button { padding: 5px 10px; font-size: 0.85rem; }
 
+    /* ----- Mode bar, key, levels ----- */
+    .modebar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 4px 0 10px; }
+    .modebar button { padding: 9px 16px; font-weight: 600; }
+    #keyBtn { font-size: 1.1rem; padding: 7px 12px; }
+    #keyBtn.unlocked { background: linear-gradient(135deg, #ffe066, #f5b700); border-color: #d99a00; color: #3a2a00; }
+    .levels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .level-btn {
+      display: flex; align-items: center; gap: 8px; text-align: left;
+      padding: 8px 10px; border-radius: 10px; font-size: 0.9rem;
+    }
+    .level-btn .num {
+      flex: none; width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface-2); font-weight: 800; font-size: 0.85rem;
+    }
+    .level-btn .lname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .level-btn.beaten .num { background: var(--success); color: #fff; }
+    .level-btn.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+    .level-btn:disabled { opacity: 0.45; }
+    .muted { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+    .enemy-info { font-size: 0.85rem; color: var(--muted); margin: -4px 0 12px; text-align: center; }
+
+    .modal {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+      padding: 20px; width: min(100%, 360px); box-shadow: 0 10px 30px var(--shadow);
+    }
+    .modal-box h3 { margin: 0 0 12px; }
+    .modal-box input {
+      width: 100%; font: inherit; padding: 9px 11px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    }
+    .modal-box .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+    .modal-box .msg { min-height: 1.2em; margin: 10px 0 0; font-size: 0.9rem; }
+    .msg.err { color: var(--danger); }
+    .msg.ok { color: var(--success); }
+    #toast {
+      position: fixed; left: 50%; top: 80px; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 10px 16px; border-radius: 10px; font-weight: 700; z-index: 60;
+      box-shadow: 0 8px 24px var(--shadow); opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+
     /* ----- Arena ----- */
     #arenaWrap { width: min(100%, 960px); }
     #arena {
@@ -100,7 +148,12 @@
 
     <!-- ===== Setup ===== -->
     <section id="setup">
-      <p class="sub">Design your knights, then battle! First to win 2 rounds is the champion.</p>
+      <div class="modebar">
+        <button data-mode="free">⚔️ Free Battle</button>
+        <button data-mode="levels">🏰 Levels</button>
+        <button id="keyBtn" title="Secret code">🔑</button>
+      </div>
+      <p class="sub" id="setupSub"></p>
       <div class="builders" id="builders"></div>
       <div class="setup-bottom">
         <div class="difficulty" id="diffBox">Bot level:
@@ -118,8 +171,9 @@
       <div id="arenaWrap">
         <canvas id="arena" width="960" height="540"></canvas>
         <div class="arena-bar">
-          <button id="backBtn">← Change knights</button>
-          <div style="display:flex;gap:8px">
+          <button id="backBtn">← Back</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="nextBtn" class="primary hidden">Next level ▶</button>
             <button id="soundBtn">🔊 Sound</button>
             <button id="rematchBtn">↻ Restart match</button>
           </div>
@@ -134,6 +188,29 @@
     </section>
   </main>
 
+  <!-- Secret code box -->
+  <div id="keyModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>🔑 Secret code</h3>
+      <div id="keyLocked">
+        <input type="password" id="keyInput" placeholder="Type the password" autocomplete="off">
+        <p class="msg" id="keyMsg"></p>
+        <div class="row">
+          <button id="keyCancel">Cancel</button>
+          <button id="keyGo" class="primary">Unlock</button>
+        </div>
+      </div>
+      <div id="keyUnlocked">
+        <p>♾️ Infinity points are <b>on</b>. Your knights can use as many skill points as they want, up to 10 in each skill.</p>
+        <div class="row">
+          <button id="keyOff">Turn off</button>
+          <button id="keyClose" class="primary">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
   <script type="module" src="../assets/header.js"></script>
   <script>
   (function () {
@@ -147,7 +224,22 @@
     const ARMOR = ['#c3cad4', '#d4af37', '#4a4a57', '#a8673a', '#e8e8ee', '#7d8fa6'];
     const ACCENT = ['#d63b3b', '#2e6bd1', '#2f9e5a', '#7d4bc4', '#e67e22', '#e84393', '#1abc9c', '#f1c40f'];
     const EMBLEMS = ['★', '♥', '⚡', '☀', '☾', '✚', '♞', '♛', '🐉', '🦁'];
-    const STAT_MAX = 6, POINTS = 9;
+    const STAT_MAX = 6, POINTS = 9, CHEAT_MAX = 10;
+    const SECRET = 'Caleb1sCool';
+
+    // Levels: bot knights that get tougher and tougher
+    const LEVELS = [
+      { name: 'Squire Tim',      armor: '#a8673a', accent: '#2f9e5a', emblem: '✚', weapon: 'sword',  str: 1, spd: 2, def: 1, ai: 'easy' },
+      { name: 'Sir Clumsy',      armor: '#c3cad4', accent: '#e67e22', emblem: '☀', weapon: 'axe',    str: 2, spd: 1, def: 2, ai: 'easy' },
+      { name: 'Lady Thorn',      armor: '#e8e8ee', accent: '#e84393', emblem: '♥', weapon: 'spear',  str: 2, spd: 3, def: 3, ai: 'normal' },
+      { name: 'Baron Boulder',   armor: '#7d8fa6', accent: '#f1c40f', emblem: '♛', weapon: 'hammer', str: 4, spd: 1, def: 4, ai: 'normal' },
+      { name: 'The Black Blade', armor: '#4a4a57', accent: '#d63b3b', emblem: '☾', weapon: 'sword',  str: 3, spd: 4, def: 3, ai: 'normal' },
+      { name: 'Captain Stone',   armor: '#7d8fa6', accent: '#1abc9c', emblem: '♞', weapon: 'axe',    str: 4, spd: 3, def: 4, ai: 'hard' },
+      { name: 'Silver Lance',    armor: '#e8e8ee', accent: '#2e6bd1', emblem: '⚡', weapon: 'spear',  str: 4, spd: 5, def: 3, ai: 'hard' },
+      { name: 'The Iron Giant',  armor: '#4a4a57', accent: '#e67e22', emblem: '🦁', weapon: 'hammer', str: 6, spd: 2, def: 6, ai: 'hard' },
+      { name: 'Shadow Knight',   armor: '#4a4a57', accent: '#7d4bc4', emblem: '☾', weapon: 'sword',  str: 6, spd: 6, def: 5, ai: 'master' },
+      { name: 'The Dragon King', armor: '#d4af37', accent: '#d63b3b', emblem: '🐉', weapon: 'axe',    str: 7, spd: 6, def: 7, ai: 'master' },
+    ];
     const STATS = [['str', 'Strength'], ['spd', 'Speed'], ['def', 'Defense']];
 
     const SAVE_KEY = 'knight-clash-v1';
@@ -158,6 +250,10 @@
       ],
       p2Bot: true,
       difficulty: 'normal',
+      mode: 'free',        // 'free' or 'levels'
+      unlocked: 1,         // highest level you can play
+      level: 1,            // level picked to play
+      cheat: false,        // infinity points
     };
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -288,91 +384,193 @@
 
     function pointsUsed(k) { return k.str + k.spd + k.def; }
 
+    const statMax = () => setup.cheat ? CHEAT_MAX : STAT_MAX;
+
+    // When infinity points get turned off, bring knights back inside the normal limits
+    function clampKnight(k) {
+      for (const [key] of STATS) k[key] = Math.max(0, Math.min(STAT_MAX, k[key]));
+      while (pointsUsed(k) > POINTS) {
+        const top = STATS.map(([key]) => key).sort((a, b) => k[b] - k[a])[0];
+        k[top]--;
+      }
+    }
+
+    function knightCard(k, i) {
+      const card = document.createElement('div');
+      card.className = 'builder';
+      const isBot = i === 1 && setup.p2Bot;
+      card.innerHTML = `
+        <h2><span>${i === 0 ? '🛡️ Player 1' : (isBot ? '🤖 Bot' : '🛡️ Player 2')}</span>
+          ${i === 1 ? `<span class="who-toggle"><button data-who="bot" class="${isBot ? 'active' : ''}">Bot</button><button data-who="p2" class="${isBot ? '' : 'active'}">Player 2</button></span>` : ''}
+        </h2>
+        <canvas class="preview" width="300" height="170"></canvas>
+        <div class="field"><label>Name</label><input type="text" maxlength="16" value=""></div>
+        <div class="field"><label>Armor</label><div class="swatches" data-k="armor"></div></div>
+        <div class="field"><label>Cape &amp; shield</label><div class="swatches" data-k="accent"></div></div>
+        <div class="field"><label>Shield emblem</label><div class="chips" data-k="emblem"></div></div>
+        <div class="field"><label>Weapon</label><div class="chips" data-k="weapon"></div><div class="weapon-desc"></div></div>
+        <div class="field">
+          <div class="stats-head"><span>Skills</span><span class="points-left"></span></div>
+          <div class="statrows"></div>
+        </div>`;
+      const nameInput = card.querySelector('input');
+      nameInput.value = k.name;
+      nameInput.addEventListener('input', () => { k.name = nameInput.value.trim() || (i ? 'Knight 2' : 'Knight 1'); saveSetup(); });
+
+      const sw = (key, list) => {
+        const box = card.querySelector(`[data-k="${key}"]`);
+        list.forEach(c => {
+          const b = document.createElement('button');
+          b.className = 'swatch' + (k[key] === c ? ' on' : '');
+          b.style.background = c;
+          b.title = c;
+          b.onclick = () => { k[key] = c; saveSetup(); renderBuilders(); };
+          box.appendChild(b);
+        });
+      };
+      sw('armor', ARMOR);
+      sw('accent', ACCENT);
+
+      const emb = card.querySelector('[data-k="emblem"]');
+      EMBLEMS.forEach(e => {
+        const b = document.createElement('button');
+        b.className = 'chip emblem' + (k.emblem === e ? ' active' : '');
+        b.textContent = e;
+        b.onclick = () => { k.emblem = e; saveSetup(); renderBuilders(); };
+        emb.appendChild(b);
+      });
+
+      const wp = card.querySelector('[data-k="weapon"]');
+      Object.entries(WEAPONS).forEach(([id, w]) => {
+        const b = document.createElement('button');
+        b.className = 'chip' + (k.weapon === id ? ' active' : '');
+        b.textContent = `${w.icon} ${w.name}`;
+        b.onclick = () => { k.weapon = id; saveSetup(); renderBuilders(); };
+        wp.appendChild(b);
+      });
+      card.querySelector('.weapon-desc').textContent = WEAPONS[k.weapon].desc;
+
+      const max = statMax();
+      const left = POINTS - pointsUsed(k);
+      card.querySelector('.points-left').textContent = setup.cheat ? '♾️ Infinity points' : `${left} point${left === 1 ? '' : 's'} left`;
+      const rows = card.querySelector('.statrows');
+      STATS.forEach(([key, label]) => {
+        const row = document.createElement('div');
+        row.className = 'stat';
+        row.innerHTML = `<span>${label}</span><button aria-label="Less ${label}">−</button><div class="pips">${
+          Array.from({ length: max }, (_, j) => `<span class="pip ${j < k[key] ? 'on' : ''}"></span>`).join('')
+        }</div><button aria-label="More ${label}">+</button>`;
+        const [minus, plus] = row.querySelectorAll('button');
+        minus.disabled = k[key] <= 0;
+        plus.disabled = k[key] >= max || (!setup.cheat && left <= 0);
+        minus.onclick = () => { k[key]--; saveSetup(); renderBuilders(); };
+        plus.onclick = () => { k[key]++; saveSetup(); renderBuilders(); };
+        rows.appendChild(row);
+      });
+
+      card.querySelectorAll('[data-who]').forEach(b => {
+        b.onclick = () => { setup.p2Bot = b.dataset.who === 'bot'; saveSetup(); renderBuilders(); };
+      });
+
+      previews.push({ canvas: card.querySelector('.preview'), k, facing: i === 0 ? 1 : -1 });
+      return card;
+    }
+
+    function levelsCard() {
+      const card = document.createElement('div');
+      card.className = 'builder';
+      const beaten = Math.min(LEVELS.length, setup.unlocked - 1);
+      setup.level = Math.max(1, Math.min(setup.level, setup.unlocked, LEVELS.length));
+      const foe = LEVELS[setup.level - 1];
+      card.innerHTML = `
+        <h2><span>🏰 Levels</span><span class="muted">${beaten} / ${LEVELS.length} beaten</span></h2>
+        <canvas class="preview" width="300" height="170"></canvas>
+        <div class="enemy-info"><b>Level ${setup.level}: ${foe.name}</b> · ${WEAPONS[foe.weapon].icon} ${WEAPONS[foe.weapon].name}</div>
+        <div class="levels"></div>`;
+      const grid = card.querySelector('.levels');
+      LEVELS.forEach((L, i) => {
+        const n = i + 1;
+        const b = document.createElement('button');
+        const locked = n > setup.unlocked;
+        b.className = 'level-btn' + (n < setup.unlocked ? ' beaten' : '') + (n === setup.level ? ' sel' : '');
+        b.disabled = locked;
+        b.innerHTML = `<span class="num">${n < setup.unlocked ? '✓' : n}</span><span class="lname">${locked ? '🔒 Locked' : `${L.emblem} ${L.name}`}</span>`;
+        b.onclick = () => { setup.level = n; saveSetup(); renderBuilders(); };
+        grid.appendChild(b);
+      });
+      previews.push({ canvas: card.querySelector('.preview'), k: foe, facing: -1 });
+      return card;
+    }
+
     function renderBuilders() {
       buildersEl.innerHTML = '';
       previews.length = 0;
-      setup.knights.forEach((k, i) => {
-        const card = document.createElement('div');
-        card.className = 'builder';
-        const isBot = i === 1 && setup.p2Bot;
-        card.innerHTML = `
-          <h2><span>${i === 0 ? '🛡️ Player 1' : (isBot ? '🤖 Bot' : '🛡️ Player 2')}</span>
-            ${i === 1 ? `<span class="who-toggle"><button data-who="bot" class="${isBot ? 'active' : ''}">Bot</button><button data-who="p2" class="${isBot ? '' : 'active'}">Player 2</button></span>` : ''}
-          </h2>
-          <canvas class="preview" width="300" height="170"></canvas>
-          <div class="field"><label>Name</label><input type="text" maxlength="16" value=""></div>
-          <div class="field"><label>Armor</label><div class="swatches" data-k="armor"></div></div>
-          <div class="field"><label>Cape &amp; shield</label><div class="swatches" data-k="accent"></div></div>
-          <div class="field"><label>Shield emblem</label><div class="chips" data-k="emblem"></div></div>
-          <div class="field"><label>Weapon</label><div class="chips" data-k="weapon"></div><div class="weapon-desc"></div></div>
-          <div class="field">
-            <div class="stats-head"><span>Skills</span><span class="points-left"></span></div>
-            <div class="statrows"></div>
-          </div>`;
-        const nameInput = card.querySelector('input');
-        nameInput.value = k.name;
-        nameInput.addEventListener('input', () => { k.name = nameInput.value.trim() || (i ? 'Knight 2' : 'Knight 1'); saveSetup(); });
+      const levels = setup.mode === 'levels';
+      buildersEl.appendChild(knightCard(setup.knights[0], 0));
+      buildersEl.appendChild(levels ? levelsCard() : knightCard(setup.knights[1], 1));
 
-        const sw = (key, list) => {
-          const box = card.querySelector(`[data-k="${key}"]`);
-          list.forEach(c => {
-            const b = document.createElement('button');
-            b.className = 'swatch' + (k[key] === c ? ' on' : '');
-            b.style.background = c;
-            b.title = c;
-            b.onclick = () => { k[key] = c; saveSetup(); renderBuilders(); };
-            box.appendChild(b);
-          });
-        };
-        sw('armor', ARMOR);
-        sw('accent', ACCENT);
-
-        const emb = card.querySelector('[data-k="emblem"]');
-        EMBLEMS.forEach(e => {
-          const b = document.createElement('button');
-          b.className = 'chip emblem' + (k.emblem === e ? ' active' : '');
-          b.textContent = e;
-          b.onclick = () => { k.emblem = e; saveSetup(); renderBuilders(); };
-          emb.appendChild(b);
-        });
-
-        const wp = card.querySelector('[data-k="weapon"]');
-        Object.entries(WEAPONS).forEach(([id, w]) => {
-          const b = document.createElement('button');
-          b.className = 'chip' + (k.weapon === id ? ' active' : '');
-          b.textContent = `${w.icon} ${w.name}`;
-          b.onclick = () => { k.weapon = id; saveSetup(); renderBuilders(); };
-          wp.appendChild(b);
-        });
-        card.querySelector('.weapon-desc').textContent = WEAPONS[k.weapon].desc;
-
-        const left = POINTS - pointsUsed(k);
-        card.querySelector('.points-left').textContent = `${left} point${left === 1 ? '' : 's'} left`;
-        const rows = card.querySelector('.statrows');
-        STATS.forEach(([key, label]) => {
-          const row = document.createElement('div');
-          row.className = 'stat';
-          row.innerHTML = `<span>${label}</span><button aria-label="Less ${label}">−</button><div class="pips">${
-            Array.from({ length: STAT_MAX }, (_, j) => `<span class="pip ${j < k[key] ? 'on' : ''}"></span>`).join('')
-          }</div><button aria-label="More ${label}">+</button>`;
-          const [minus, plus] = row.querySelectorAll('button');
-          minus.disabled = k[key] <= 0;
-          plus.disabled = k[key] >= STAT_MAX || left <= 0;
-          minus.onclick = () => { k[key]--; saveSetup(); renderBuilders(); };
-          plus.onclick = () => { k[key]++; saveSetup(); renderBuilders(); };
-          rows.appendChild(row);
-        });
-
-        card.querySelectorAll('[data-who]').forEach(b => {
-          b.onclick = () => { setup.p2Bot = b.dataset.who === 'bot'; saveSetup(); renderBuilders(); };
-        });
-
-        buildersEl.appendChild(card);
-        previews.push({ canvas: card.querySelector('.preview'), k, facing: i === 0 ? 1 : -1 });
-      });
-      document.getElementById('diffBox').classList.toggle('hidden', !setup.p2Bot);
+      document.querySelectorAll('.modebar [data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === setup.mode));
+      const keyBtn = document.getElementById('keyBtn');
+      keyBtn.classList.toggle('unlocked', setup.cheat);
+      keyBtn.textContent = setup.cheat ? '🔑 ♾️' : '🔑';
+      document.getElementById('setupSub').textContent = levels
+        ? 'Beat each knight to unlock the next level. Can you defeat the Dragon King?'
+        : 'Design your knights, then battle! First to win 2 rounds is the champion.';
+      document.getElementById('diffBox').classList.toggle('hidden', levels || !setup.p2Bot);
       document.querySelectorAll('#diffBox button').forEach(b => b.classList.toggle('active', b.dataset.d === setup.difficulty));
+      document.getElementById('fightBtn').textContent = levels ? `⚔️ Fight Level ${setup.level}!` : '⚔️ Fight!';
     }
+
+    document.querySelectorAll('.modebar [data-mode]').forEach(b => {
+      b.onclick = () => { setup.mode = b.dataset.mode; saveSetup(); renderBuilders(); };
+    });
+
+    // ----- Secret key -----
+    const keyModal = document.getElementById('keyModal');
+    const keyInput = document.getElementById('keyInput');
+    const keyMsg = document.getElementById('keyMsg');
+    const toastEl = document.getElementById('toast');
+    function toast(text) {
+      toastEl.textContent = text;
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 2200);
+    }
+    function openKey() {
+      document.getElementById('keyLocked').classList.toggle('hidden', setup.cheat);
+      document.getElementById('keyUnlocked').classList.toggle('hidden', !setup.cheat);
+      keyInput.value = '';
+      keyMsg.textContent = ''; keyMsg.className = 'msg';
+      keyModal.classList.remove('hidden');
+      if (!setup.cheat) setTimeout(() => keyInput.focus(), 50);
+    }
+    const closeKey = () => keyModal.classList.add('hidden');
+    function tryKey() {
+      if (keyInput.value === SECRET) {
+        setup.cheat = true;
+        saveSetup();
+        renderBuilders();
+        closeKey();
+        toast('♾️ Infinity points unlocked!');
+      } else {
+        keyMsg.textContent = 'That\'s not the password. Try again!';
+        keyMsg.className = 'msg err';
+        keyInput.select();
+      }
+    }
+    document.getElementById('keyBtn').onclick = openKey;
+    document.getElementById('keyGo').onclick = tryKey;
+    keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryKey(); if (e.key === 'Escape') closeKey(); });
+    document.getElementById('keyCancel').onclick = closeKey;
+    document.getElementById('keyClose').onclick = closeKey;
+    document.getElementById('keyOff').onclick = () => {
+      setup.cheat = false;
+      setup.knights.forEach(clampKnight);
+      saveSetup();
+      renderBuilders();
+      closeKey();
+      toast('Infinity points turned off');
+    };
+    keyModal.addEventListener('click', (e) => { if (e.target === keyModal) closeKey(); });
 
     document.querySelectorAll('#diffBox button').forEach(b => {
       b.onclick = () => { setup.difficulty = b.dataset.d; saveSetup(); renderBuilders(); };
@@ -487,10 +685,10 @@
       const w = WEAPONS[k.weapon];
       return {
         speed: 2.6 + k.spd * 0.32,
-        windup: Math.max(4, Math.round(w.windup * (1 - 0.05 * k.spd))),
-        recover: Math.max(5, Math.round(w.recover * (1 - 0.04 * k.spd))),
+        windup: Math.max(3, Math.round(w.windup * Math.max(0.45, 1 - 0.05 * k.spd))),
+        recover: Math.max(4, Math.round(w.recover * Math.max(0.5, 1 - 0.04 * k.spd))),
         dmgMult: 1 + 0.09 * k.str,
-        defMult: 1 - 0.06 * k.def,
+        defMult: Math.max(0.3, 1 - 0.06 * k.def),
       };
     }
 
@@ -522,9 +720,11 @@
       easy:   { block: 0.15, cdMin: 50, cdMax: 110, react: 22, aggress: 0.5 },
       normal: { block: 0.45, cdMin: 28, cdMax: 70,  react: 12, aggress: 0.75 },
       hard:   { block: 0.75, cdMin: 14, cdMax: 40,  react: 6,  aggress: 0.95 },
+      master: { block: 0.88, cdMin: 8,  cdMax: 26,  react: 4,  aggress: 1 },
     };
+    let botLevel = 'normal';
     function botInput(me, foe) {
-      const L = LEVEL[setup.difficulty] || LEVEL.normal;
+      const L = LEVEL[botLevel] || LEVEL.normal;
       const a = me.ai;
       const out = { left: false, right: false, jump: false, block: false, attack: false };
       const dist = Math.abs(foe.x - me.x);
@@ -640,30 +840,55 @@
     function addFloater(x, y, text, color) { floaters.push({ x, y, text, color, life: 50 }); }
 
     // ----- Rounds -----
+    const inLevels = () => setup.mode === 'levels';
+    const opponent = () => inLevels() ? LEVELS[setup.level - 1] : setup.knights[1];
+    const p2IsBot = () => inLevels() || setup.p2Bot;
+
     function startMatch() {
-      match = { wins: [0, 0], round: 0, phase: 'intro', timer: 0, banner: '', winner: -1 };
+      match = { wins: [0, 0], round: 0, phase: 'intro', timer: 0, banner: '', sub: '', winner: -1 };
+      botLevel = inLevels() ? opponent().ai : setup.difficulty;
+      document.getElementById('nextBtn').classList.add('hidden');
       startRound();
     }
     function startRound() {
       match.round++;
       fighters = [
         makeFighter(setup.knights[0], 250, 1, false),
-        makeFighter(setup.knights[1], 710, -1, setup.p2Bot),
+        makeFighter(opponent(), 710, -1, p2IsBot()),
       ];
       particles = []; floaters = [];
       match.phase = 'intro'; match.timer = 100;
-      match.banner = `Round ${match.round}`;
+      match.banner = (inLevels() ? `Level ${setup.level} · ` : '') + `Round ${match.round}`;
     }
     function roundOver(winnerIdx) {
       match.wins[winnerIdx]++;
       match.phase = 'ko'; match.timer = 150;
-      const name = setup.knights[winnerIdx].name;
-      if (match.wins[winnerIdx] >= 2) {
-        match.winner = winnerIdx;
+      const name = fighters[winnerIdx].k.name;
+      if (match.wins[winnerIdx] < 2) { match.banner = `${name} wins the round!`; match.sub = ''; return; }
+
+      match.winner = winnerIdx;
+      match.timer = 99999;
+      if (!inLevels()) {
         match.banner = `🏆 ${name} is the champion!`;
-        match.timer = 99999;
+        match.sub = 'Press Enter or click "Restart match" to play again';
+        return;
+      }
+      if (winnerIdx === 0) {
+        const last = setup.level >= LEVELS.length;
+        setup.unlocked = Math.max(setup.unlocked, setup.level + 1);
+        saveSetup();
+        sfx.bell();
+        if (last) {
+          match.banner = '👑 You beat the Dragon King!';
+          match.sub = 'You are the greatest knight in the land!';
+        } else {
+          match.banner = `🏆 Level ${setup.level} complete!`;
+          match.sub = `Level ${setup.level + 1} unlocked · Press Enter for the next level`;
+          document.getElementById('nextBtn').classList.remove('hidden');
+        }
       } else {
-        match.banner = `${name} wins the round!`;
+        match.banner = `💀 ${name} wins!`;
+        match.sub = 'Press Enter to try again';
       }
     }
 
@@ -768,7 +993,7 @@
 
       drawHud();
       if (match.phase === 'intro') drawBanner(match.timer > 40 ? match.banner : 'Fight!');
-      if (match.phase === 'ko') drawBanner(match.banner, match.winner >= 0 ? 'Press Enter or click "Restart match" to play again' : null);
+      if (match.phase === 'ko') drawBanner(match.banner, match.winner >= 0 ? match.sub : null);
     }
 
     // ----- Main loop (fixed 60 updates per second) -----
@@ -819,7 +1044,10 @@
       if (GAME_KEYS.includes(e.code)) e.preventDefault();
       if (!e.repeat) pressed[e.code] = true;
       keys[e.code] = true;
-      if (e.code === 'Enter' && match && match.winner >= 0) startMatch();
+      if (e.code === 'Enter' && match && match.winner >= 0) {
+        if (inLevels() && match.winner === 0 && setup.level < LEVELS.length) nextLevel();
+        else startMatch();
+      }
     });
     addEventListener('keyup', (e) => { keys[e.code] = false; });
     addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -830,8 +1058,9 @@
       setupEl.classList.add('hidden');
       battleEl.classList.remove('hidden');
       document.getElementById('k1name').textContent = `${setup.knights[0].emblem} ${setup.knights[0].name}`;
-      document.getElementById('k2name').textContent = `${setup.knights[1].emblem} ${setup.knights[1].name}`;
-      document.getElementById('p2keys').classList.toggle('hidden', setup.p2Bot);
+      const foe = opponent();
+      document.getElementById('k2name').textContent = `${foe.emblem} ${foe.name}`;
+      document.getElementById('p2keys').classList.toggle('hidden', p2IsBot());
       startMatch();
       running = true;
       lastT = performance.now();
@@ -845,6 +1074,14 @@
       renderBuilders();
     };
     document.getElementById('rematchBtn').onclick = () => startMatch();
+    function nextLevel() {
+      setup.level = Math.min(LEVELS.length, setup.level + 1);
+      saveSetup();
+      const foe = opponent();
+      document.getElementById('k2name').textContent = `${foe.emblem} ${foe.name}`;
+      startMatch();
+    }
+    document.getElementById('nextBtn').onclick = nextLevel;
     const soundBtn = document.getElementById('soundBtn');
     soundBtn.onclick = () => { soundOn = !soundOn; soundBtn.textContent = soundOn ? '🔊 Sound' : '🔇 Muted'; };
 
