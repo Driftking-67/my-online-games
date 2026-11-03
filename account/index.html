@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    .card {
+      width: min(100%, 400px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 10px 30px var(--shadow);
+    }
+    h1 { margin: 0 0 16px; font-size: 1.5rem; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+    .tabs button { flex: 1; }
+    form { display: flex; flex-direction: column; gap: 12px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.95rem; color: var(--muted); }
+    input {
+      font: inherit;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+    }
+    input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    form button[type="submit"] { margin-top: 4px; padding: 10px; }
+    .link-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      padding: 0;
+      align-self: flex-start;
+      text-decoration: underline;
+    }
+    .link-btn:hover { background: none; }
+    .msg { min-height: 1.3em; font-size: 0.95rem; margin: 4px 0 0; }
+    .msg.error { color: var(--danger); }
+    .msg.ok { color: var(--success); }
+    .hidden { display: none !important; }
+    .who { font-size: 1.1rem; margin: 0 0 4px; }
+    .email { color: var(--muted); margin: 0 0 20px; }
+    .notice { color: var(--muted); line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="card">
+
+      <!-- Shown until Firebase settings are added -->
+      <div id="notReady" class="hidden">
+        <h1>Accounts coming soon</h1>
+        <p class="notice">Sign in isn't set up yet. You can still play every game.</p>
+      </div>
+
+      <!-- Shown when signed out -->
+      <div id="signedOut" class="hidden">
+        <div class="tabs">
+          <button type="button" id="tabIn" class="active">Sign in</button>
+          <button type="button" id="tabUp">Sign up</button>
+        </div>
+
+        <form id="formIn">
+          <label>Email
+            <input type="email" name="email" autocomplete="email" required>
+          </label>
+          <label>Password
+            <input type="password" name="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit" class="primary">Sign in</button>
+          <button type="button" class="link-btn" id="forgot">Forgot password?</button>
+        </form>
+
+        <form id="formUp" class="hidden">
+          <label>Name
+            <input type="text" name="name" autocomplete="nickname" maxlength="30" required>
+          </label>
+          <label>Email
+            <input type="email" name="email" autocomplete="email" required>
+          </label>
+          <label>Password (6+ characters)
+            <input type="password" name="password" autocomplete="new-password" minlength="6" required>
+          </label>
+          <button type="submit" class="primary">Create account</button>
+        </form>
+
+        <p class="msg" id="msg" role="status"></p>
+      </div>
+
+      <!-- Shown when signed in -->
+      <div id="signedIn" class="hidden">
+        <h1>Your account</h1>
+        <p class="who" id="who"></p>
+        <p class="email" id="email"></p>
+        <button type="button" id="signOut">Sign out</button>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script type="module">
+    import { auth, fb, configured, watchUser, friendlyError } from '../assets/firebase.js';
+
+    const $ = (id) => document.getElementById(id);
+    const show = (el, on) => el.classList.toggle('hidden', !on);
+    const msg = $('msg');
+    const say = (text, kind = 'error') => { msg.textContent = text; msg.className = 'msg ' + kind; };
+
+    if (!configured || !auth) {
+      show($('notReady'), true);
+    } else {
+      watchUser((user) => {
+        show($('signedOut'), !user);
+        show($('signedIn'), !!user);
+        if (user) {
+          $('who').textContent = `Hi, ${user.displayName || 'player'}! 👋`;
+          $('email').textContent = user.email;
+        }
+      });
+    }
+
+    // Tabs
+    function pickTab(signUp) {
+      $('tabIn').classList.toggle('active', !signUp);
+      $('tabUp').classList.toggle('active', signUp);
+      show($('formIn'), !signUp);
+      show($('formUp'), signUp);
+      say('');
+    }
+    $('tabIn').onclick = () => pickTab(false);
+    $('tabUp').onclick = () => pickTab(true);
+
+    async function busy(form, fn) {
+      const btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      say('');
+      try { await fn(); }
+      catch (err) { say(friendlyError(err)); }
+      finally { btn.disabled = false; }
+    }
+
+    // Sign in
+    $('formIn').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = e.target;
+      busy(f, () => fb.signInWithEmailAndPassword(auth, f.email.value.trim(), f.password.value));
+    });
+
+    // Sign up
+    $('formUp').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = e.target;
+      busy(f, async () => {
+        const name = f.name.value.trim();
+        const cred = await fb.createUserWithEmailAndPassword(auth, f.email.value.trim(), f.password.value);
+        await fb.updateProfile(cred.user, { displayName: name });
+        // Refresh the page's view now that the name is saved
+        $('who').textContent = `Hi, ${name}! 👋`;
+        const link = document.querySelector('.topbar .account-link');
+        if (link) link.textContent = `👤 ${name}`;
+      });
+    });
+
+    // Forgot password
+    $('forgot').onclick = async () => {
+      const email = $('formIn').email.value.trim();
+      if (!email) { say('Type your email above first, then click "Forgot password?"'); return; }
+      try {
+        await fb.sendPasswordResetEmail(auth, email);
+        say('If that email has an account, a reset link is on its way.', 'ok');
+      } catch (err) { say(friendlyError(err)); }
+    };
+
+    // Sign out
+    $('signOut').onclick = () => fb.signOut(auth);
+  </script>
+</body>
+</html>
