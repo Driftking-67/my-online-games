@@ -38,13 +38,15 @@
     .poss { color: #ffd23f; }
     canvas#field { display: block; width: 100%; height: auto; border-radius: 10px; box-shadow: 0 6px 20px var(--shadow); touch-action: manipulation; background: #3f8f3a; }
     #status { font-weight: 700; text-align: center; min-height: 1.4em; }
-    .pad { display: none; gap: 8px; justify-content: center; width: 100%; flex-wrap: wrap; }
+    .pads { display: none; flex-direction: column; gap: 8px; width: 100%; }
+    .pad { display: flex; gap: 6px; justify-content: center; align-items: center; width: 100%; flex-wrap: nowrap; }
+    .pad-label { font-weight: 900; width: 30px; text-align: center; color: var(--muted); }
     .pad button {
-      width: 66px; height: 62px; font-size: 1.6rem; border-radius: 14px; padding: 0;
+      width: min(66px, 15vw); height: 58px; font-size: 1.5rem; border-radius: 14px; padding: 0; flex: none;
       touch-action: none; user-select: none; -webkit-user-select: none;
     }
     .pad button.held { background: var(--accent); color: #fff; }
-    @media (pointer: coarse) { .pad { display: flex; } .keys-tip { display: none; } }
+    @media (pointer: coarse) { .pads { display: flex; } .keys-tip { display: none; } }
     .keys-tip { color: var(--muted); font-size: 0.85rem; text-align: center; }
     .plays { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
     .plays button { padding: 12px 8px; font-size: 1.05rem; font-weight: 700; }
@@ -70,21 +72,27 @@
 
       <!-- ===== Setup ===== -->
       <div class="card" id="setup">
+        <div class="row" style="margin-bottom:10px">
+          <button data-mode="1p">🎮 1 Player</button>
+          <button data-mode="2p">👥 2 Players</button>
+        </div>
         <div class="row">
           <button data-league="nfl">🏟️ NFL</button>
           <button data-league="college">🎓 College</button>
         </div>
-        <div class="label">Pick your team</div>
+        <div class="label" id="teamLabel">Pick your team</div>
         <div class="teams" id="teamGrid"></div>
-        <div class="label">Opponent</div>
+        <div class="label" id="oppLabel">Opponent</div>
         <div class="row" style="justify-content:flex-start">
           <select id="oppSelect"></select>
         </div>
+        <div id="diffBox">
         <div class="label">Difficulty</div>
         <div class="row" style="justify-content:flex-start">
           <button data-diff="easy">Rookie</button>
           <button data-diff="normal">Pro</button>
           <button data-diff="hard">All-Star</button>
+        </div>
         </div>
         <div class="row"><button id="kickoff" class="primary">🏈 Kick off!</button></div>
       </div>
@@ -99,12 +107,23 @@
         <p class="portrait-tip">📱 Tip: turn your phone sideways for a bigger field.</p>
         <canvas id="field" width="960" height="540"></canvas>
         <div id="status"></div>
-        <div class="pad" id="pad">
-          <button id="leftBtn" aria-label="Move left" style="display:none">◀</button>
-          <button id="upBtn" aria-label="Move up">▲</button>
-          <button id="burstBtn" aria-label="Speed burst">⚡</button>
-          <button id="downBtn" aria-label="Move down">▼</button>
-          <button id="rightBtn" aria-label="Move right" style="display:none">▶</button>
+        <div class="pads">
+          <div class="pad" id="pad1">
+            <span class="pad-label">P1</span>
+            <button data-p="1" data-k="left" aria-label="Move left">◀</button>
+            <button data-p="1" data-k="up" aria-label="Move up">▲</button>
+            <button data-p="1" data-k="burst" aria-label="Action">⚡</button>
+            <button data-p="1" data-k="down" aria-label="Move down">▼</button>
+            <button data-p="1" data-k="right" aria-label="Move right">▶</button>
+          </div>
+          <div class="pad" id="pad2">
+            <span class="pad-label">P2</span>
+            <button data-p="2" data-k="left" aria-label="Player 2 move left">◀</button>
+            <button data-p="2" data-k="up" aria-label="Player 2 move up">▲</button>
+            <button data-p="2" data-k="burst" aria-label="Player 2 action">⚡</button>
+            <button data-p="2" data-k="down" aria-label="Player 2 move down">▼</button>
+            <button data-p="2" data-k="right" aria-label="Player 2 move right">▶</button>
+          </div>
         </div>
         <div class="keys-tip" id="keysTip">Run: <b>↑ ↓</b> to dodge, <b>Space</b> for a speed burst · Pass: click a player or press <b>1 2 3 4</b> to throw</div>
 
@@ -185,7 +204,7 @@
 
     // ================= Setup screen =================
     const $ = id => document.getElementById(id);
-    let prefs = { league: 'nfl', team: 'KC', opp: 'random', diff: 'normal' };
+    let prefs = { league: 'nfl', team: 'KC', opp: 'random', diff: 'normal', mode: '1p' };
     try { prefs = Object.assign(prefs, JSON.parse(localStorage.getItem('football-prefs')) || {}); } catch (e) {}
     const savePrefs = () => { try { localStorage.setItem('football-prefs', JSON.stringify(prefs)); } catch (e) {} };
 
@@ -194,6 +213,11 @@
       if (!teams.find(t => t.abbr === prefs.team)) prefs.team = teams[0].abbr;
       document.querySelectorAll('[data-league]').forEach(b => b.classList.toggle('active', b.dataset.league === prefs.league));
       document.querySelectorAll('[data-diff]').forEach(b => b.classList.toggle('active', b.dataset.diff === prefs.diff));
+      const two = prefs.mode === '2p';
+      document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === prefs.mode));
+      $('teamLabel').textContent = two ? "Player 1's team" : 'Pick your team';
+      $('oppLabel').textContent = two ? "Player 2's team" : 'Opponent';
+      $('diffBox').classList.toggle('hidden', two);
       $('teamGrid').innerHTML = '';
       teams.forEach(t => {
         const b = document.createElement('button');
@@ -203,13 +227,14 @@
         $('teamGrid').appendChild(b);
       });
       const sel = $('oppSelect');
-      sel.innerHTML = `<option value="random">🎲 Random opponent</option>` +
+      sel.innerHTML = `<option value="random">🎲 Random ${two ? 'team' : 'opponent'}</option>` +
         teams.filter(t => t.abbr !== prefs.team).map(t => `<option value="${t.abbr}">${t.place} ${t.name}</option>`).join('');
       sel.value = teams.find(t => t.abbr === prefs.opp && t.abbr !== prefs.team) ? prefs.opp : 'random';
     }
     document.querySelectorAll('[data-league]').forEach(b => b.onclick = () => { prefs.league = b.dataset.league; prefs.opp = 'random'; savePrefs(); renderSetup(); });
     document.querySelectorAll('[data-diff]').forEach(b => b.onclick = () => { prefs.diff = b.dataset.diff; savePrefs(); renderSetup(); });
     $('oppSelect').onchange = e => { prefs.opp = e.target.value; savePrefs(); };
+    document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { prefs.mode = b.dataset.mode; savePrefs(); renderSetup(); });
 
     // ================= Field & drawing =================
     const canvas = $('field');
@@ -292,7 +317,7 @@
       ctx.fillText(p.num, x, y + 1);
       if (p === play.ctrl) {
         ctx.fillStyle = '#111'; ctx.font = '800 12px system-ui';
-        ctx.fillStyle = '#ffd23f'; ctx.fillText('YOU', x, y - r - 9);
+        ctx.fillStyle = '#ffd23f'; ctx.fillText(game.twoP ? (play.youOff ? 'P2' : 'P1') : 'YOU', x, y - r - 9);
       }
       if (p.stun > 0) { ctx.font = `${PPY}px system-ui`; ctx.fillText('💫', x, y - r - 6); }
     }
@@ -329,7 +354,7 @@
         ? { fill: opp.c2, ring: opp.c1, text: textOn(opp.c2) }
         : { fill: opp.c1, ring: opp.c2, text: textOn(opp.c1) };
       if (colorDist(youColors.fill, oppColors.fill) < 90) oppColors = { fill: '#ffffff', ring: opp.c1, text: '#111' };
-      game = { score: [0, 0], drives: 0, ot: 0, ballOn: 25, down: 1, toGo: 10, poss: 'you', d: DIFF[prefs.diff], over: false, conv: null };
+      game = { score: [0, 0], drives: 0, ot: 0, ballOn: 25, down: 1, toGo: 10, poss: 'you', d: DIFF[prefs.mode === '2p' ? 'normal' : prefs.diff], over: false, conv: null, twoP: prefs.mode === '2p' };
       play = null; kick = null; mirror = false;
       $('setup').classList.add('hidden');
       $('gameArea').classList.remove('hidden');
@@ -337,9 +362,10 @@
       $('cpuPanel').classList.add('hidden');
       const style = (el, t, c) => { el.textContent = t.abbr; el.style.background = c.fill; el.style.color = c.text; el.style.borderColor = c.ring; };
       style($('youAbbr'), you, youColors); style($('oppAbbr'), opp, oppColors);
+      if (game.twoP) { $('youAbbr').textContent = 'P1 · ' + you.abbr; $('oppAbbr').textContent = opp.abbr + ' · P2'; }
       $('mini').style.setProperty('--youC', you.c1);
       $('mini').style.setProperty('--oppC', opp.c1);
-      startYourDrive(25, `🏈 ${you.place} ${you.name} vs ${opp.place} ${opp.name}. You get the ball first!`);
+      startYourDrive(25, game.twoP ? `🏈 ${you.name} (Player 1) vs ${opp.name} (Player 2). Player 1 gets the ball first!` : `🏈 ${you.place} ${you.name} vs ${opp.place} ${opp.name}. You get the ball first!`);
       if (!running) { running = true; last = performance.now(); requestAnimationFrame(loop); }
     }
 
@@ -364,23 +390,46 @@
     }
     const status = t => { $('status').textContent = t; };
 
-    function setPadMode(mode) {
-      // offense: ▲ ⚡ ▼   defense: ◀ ▲ ▼ ▶ 🔄   kick: just the big button
-      const def = mode === 'defense', k = mode === 'kick';
-      $('leftBtn').style.display = def ? '' : 'none';
-      $('rightBtn').style.display = def ? '' : 'none';
-      $('upBtn').style.display = k ? 'none' : '';
-      $('downBtn').style.display = k ? 'none' : '';
-      $('burstBtn').textContent = def ? '🔄' : k ? '🦶 KICK' : '⚡';
-      $('burstBtn').style.width = k ? '160px' : '';
-      $('burstBtn').setAttribute('aria-label', def ? 'Switch player' : k ? 'Kick' : 'Speed burst');
-      $('keysTip').innerHTML = def
-        ? 'Defense: <b>arrow keys</b> or <b>WASD</b> to move your player · <b>Space</b> to switch to the player nearest the ball'
-        : k ? 'Press <b>Space</b> or tap the field when the marker is in the green'
+    // ----- who controls what -----
+    const other = side => side === 'you' ? 'cpu' : 'you';
+    const teamOf = side => side === 'you' ? you : opp;
+    // A friendly name for a side: "Player 1 (Chiefs)" in 2-player mode, "You" / "Bears" otherwise
+    const who = side => game.twoP ? `Player ${side === 'you' ? 1 : 2} (${teamOf(side).name})` : (side === 'you' ? 'You' : opp.name);
+
+    function setOnePad(n, mode) {
+      const pad = $('pad' + n);
+      if (mode === 'hidden') { pad.style.display = 'none'; return; }
+      pad.style.display = '';
+      const show = (k, on) => { pad.querySelector(`[data-k="${k}"]`).style.display = on ? '' : 'none'; };
+      const def = mode === 'defense', k = mode === 'kick', off = mode === 'offense', none = mode === 'none';
+      show('left', def); show('right', def); show('up', def || off); show('down', def || off); show('burst', !none);
+      const bb = pad.querySelector('[data-k="burst"]');
+      bb.textContent = def ? '🔄' : k ? '🦶 KICK' : '⚡';
+      bb.style.width = k ? '160px' : '';
+      pad.querySelector('.pad-label').style.display = game && game.twoP ? '' : 'none';
+      pad.style.opacity = none ? 0.35 : 1;
+    }
+    // Show the right buttons for each player (offense ▲ ⚡ ▼, defense ◀ ▲ ▼ ▶ 🔄, kicking 🦶)
+    function setPads() {
+      if (!game) return;
+      for (const n of [1, 2]) {
+        const side = n === 1 ? 'you' : 'cpu';
+        let m;
+        if (n === 2 && !game.twoP) m = 'hidden';
+        else if (kick) m = kick.team === side && kick.phase === 'aim' ? 'kick' : 'none';
+        else m = side === game.poss ? 'offense' : 'defense';
+        setOnePad(n, m);
+      }
+      const youDef = game.poss === 'cpu';
+      $('keysTip').innerHTML = game.twoP
+        ? '<b>Player 1:</b> W A S D to move · <b>Space</b> = speed burst / switch player / kick · <b>1 2 3 4</b> to throw<br><b>Player 2:</b> arrow keys to move · <b>Enter</b> = speed burst / switch player / kick · <b>7 8 9 0</b> to throw'
+        : kick ? 'Press <b>Space</b> or tap the field when the marker is in the green'
+        : youDef ? 'Defense: <b>arrow keys</b> or <b>WASD</b> to move your player · <b>Space</b> to switch to the player nearest the ball'
         : 'Run: <b>↑ ↓</b> to dodge, <b>Space</b> for a speed burst · Pass: click a player or press <b>1 2 3 4</b> to throw';
     }
+    const setPadMode = () => setPads();
 
-    // ================= Your offense =================
+    // ================= Offense =================
     function startYourDrive(on, msg) {
       game.poss = 'you';
       mirror = false;
@@ -388,16 +437,22 @@
       play = null;
       camX = clampCam(10 + on - 18);
       updateBoard();
-      status(msg || 'Your ball! Pick a play.');
-      setPadMode('offense');
+      status(msg || (game.twoP ? "Player 1's ball! Pick a play." : 'Your ball! Pick a play.'));
+      setPads();
       showPlays();
     }
 
-    function showPlays() {
+    function showPlays() { offensePicker(game.poss); }
+
+    function offensePicker(side) {
+      const g = game;
+      mirror = side === 'cpu';
+      setPads();
       $('pickPanel').classList.remove('hidden');
-      $('pickTitle').textContent = game.conv ? '🏈 Two-point try: pick a play' : '🏈 Your offense: pick a play';
-      const fourth = game.down === 4 && !game.conv;
-      const fgDist = 117 - game.ballOn;
+      const label = g.twoP ? who(side) : 'Your offense';
+      $('pickTitle').textContent = g.conv ? `🏈 ${g.twoP ? who(side) + ': t' : 'T'}wo-point try! Pick a play` : `🏈 ${label}: pick a play`;
+      const fourth = g.down === 4 && !g.conv;
+      const fgDist = 117 - g.ballOn;
       const opts = [
         ['run', '🏃 Run', 'Steer past tacklers'],
         ['short', '🎯 Short pass', 'Quick, safer throws'],
@@ -408,67 +463,89 @@
         if (fgDist <= 62) opts.push(['fg', '🥅 Field goal', `${fgDist}-yard try`]);
       }
       $('plays').innerHTML = '';
-      for (const [id, label, small] of opts) {
+      for (const [id, lbl, small] of opts) {
         const b = document.createElement('button');
         if (id === 'punt' || id === 'fg') b.className = 'special';
-        b.innerHTML = `${label}<small>${small}</small>`;
-        b.onclick = () => callPlay(id);
+        b.innerHTML = `${lbl}<small>${small}</small>`;
+        b.onclick = () => callPlay(id, side);
         $('plays').appendChild(b);
       }
-      if (fourth) status(`4th down! Go for it, or kick?`);
+      if (fourth) status(`4th down! ${g.twoP ? who(side) + ': go' : 'Go'} for it, or kick?`);
     }
 
-    function chooseAfterTouchdown() {
-      setPadMode('offense');
+    // After a score or change of possession, the other side gets the ball at `on` (their own yard line)
+    function handOff(fromSide, on) {
+      if (fromSide === 'you') changePoss(() => cpuDrive(on));
+      else endCpuPossession(on);
+    }
+
+    function chooseAfterTouchdown(side) {
+      side = side || 'you';
+      const idx = side === 'you' ? 0 : 1;
+      mirror = side === 'cpu';
+      setPads();
       $('pickPanel').classList.remove('hidden');
-      $('pickTitle').textContent = '🎉 Touchdown! What next?';
+      $('pickTitle').textContent = `🎉 Touchdown${game.twoP ? ' ' + who(side) : ''}! What next?`;
       $('plays').innerHTML = '';
       const kickBtn = document.createElement('button');
       kickBtn.className = 'special';
       kickBtn.innerHTML = '🥅 Kick extra point<small>+1 · easy kick</small>';
       kickBtn.onclick = () => {
         $('pickPanel').classList.add('hidden');
-        startKick({ team: 'you', dist: 33, kind: 'pat' }, good => {
-          if (good) game.score[0] += 1;
+        startKick({ team: side, dist: 33, kind: 'pat' }, good => {
+          if (good) game.score[idx] += 1;
           status(good ? '✅ Extra point is good! +1' : '❌ The extra point is no good.');
           updateBoard();
-          changePoss(() => cpuDrive(25));
+          handOff(side, 25);
         });
       };
       const twoBtn = document.createElement('button');
       twoBtn.innerHTML = '🏈 Go for two<small>+2 · one play from the 2-yard line</small>';
       twoBtn.onclick = () => {
-        game.conv = 'you'; game.ballOn = 98; game.down = 1; game.toGo = 2;
-        mirror = false;
+        game.conv = side; game.ballOn = 98; game.down = 1; game.toGo = 2;
         camX = clampCam(10 + game.ballOn - 18);
         updateBoard();
-        status('🏈 Two-point try! Get into the end zone on one play.');
-        showPlays();
+        status(`🏈 Two-point try! Get into the end zone on one play.`);
+        offensePicker(side);
       };
       $('plays').append(kickBtn, twoBtn);
     }
 
-    function callPlay(id) {
+    function callPlay(id, side) {
+      side = side || 'you';
+      const idx = side === 'you' ? 0 : 1;
       $('pickPanel').classList.add('hidden');
-      if (id === 'punt') return punt();
+      if (id === 'punt') return punt(side);
       if (id === 'fg') {
         const dist = 117 - game.ballOn;
-        return startKick({ team: 'you', dist, kind: 'fg' }, good => {
-          if (good) { game.score[0] += 3; status(`🥅 The ${dist}-yard field goal is GOOD! +3`); changePoss(() => cpuDrive(25)); }
-          else { status(`❌ The ${dist}-yard field goal is no good.`); changePoss(() => cpuDrive(Math.max(20, 100 - game.ballOn))); }
+        return startKick({ team: side, dist, kind: 'fg' }, good => {
+          if (good) { game.score[idx] += 3; status(`🥅 The ${dist}-yard field goal is GOOD! +3`); }
+          else status(`❌ The ${dist}-yard field goal is no good.`);
           updateBoard();
+          handOff(side, good ? 25 : Math.max(20, 100 - game.ballOn));
         });
       }
+      if (game.twoP) {
+        // the other player picks a defense without seeing the play
+        status(`🔒 ${who(side)} picked a play. ${who(other(side))}: pick your defense!`);
+        return defensePicker(other(side), scheme => { setupPlay(side, id, scheme); startStatus(side, id); });
+      }
       setupPlay('you', id);
-      status(id === 'run' ? 'Run! Use ▲ ▼ to dodge and ⚡ to burst.' : 'Tap a receiver to throw!');
+      startStatus('you', id);
+    }
+    function startStatus(side, id) {
+      const p = game.twoP ? (side === 'you' ? 'Player 1' : 'Player 2') + ': ' : '';
+      const d = game.twoP ? ` ${side === 'you' ? 'Player 2' : 'Player 1'}: stop them with your gold-ring defender!` : '';
+      status(p + (id === 'run' ? 'Run! Use ▲ ▼ to dodge and ⚡ to burst.' : 'Tap a receiver to throw!') + d);
     }
 
-    function punt() {
+    function punt(side) {
+      side = side || 'you';
       const dist = Math.round(38 + Math.random() * 12);
       const land = game.ballOn + dist;
-      const cpuOn = land >= 100 ? 20 : Math.max(5, 100 - land + Math.round(Math.random() * 6));
+      const on = land >= 100 ? 20 : Math.max(5, 100 - land + Math.round(Math.random() * 6));
       status(`🦶 Punt goes ${dist} yards${land >= 100 ? ' — touchback' : ''}.`);
-      changePoss(() => cpuDrive(cpuOn));
+      handOff(side, on);
     }
 
     function changePoss(next) {
@@ -477,18 +554,23 @@
       updateBoard();
       setTimeout(() => {
         if (checkEnd()) return;
-        // the second half starts with a fresh kickoff to you
-        if (!game.ot && game.drives === 8) { startYourDrive(25, '🕐 Halftime is over! Your ball at your own 25.'); return; }
+        // the second half starts with a fresh kickoff to Player 1 / you
+        if (!game.ot && game.drives === 8) { startYourDrive(25, `🕐 Halftime is over! ${game.twoP ? "Player 1's" : 'Your'} ball at the 25.`); return; }
         next();
       }, 1400);
     }
 
-    // ================= Their offense (you play defense) =================
+    // ================= The other team's offense =================
     function cpuDrive(start) {
       game.poss = 'cpu';
       game.ballOn = start; game.down = 1; game.toGo = Math.min(10, 100 - start);
       play = null;
       updateBoard();
+      if (game.twoP) {
+        status(`${who('cpu')} has the ball at the ${spotText(start)}.`);
+        return offensePicker('cpu');
+      }
+      setPads();
       $('pickPanel').classList.remove('hidden');
       $('pickTitle').textContent = `🛡️ ${opp.place} ${opp.name} have the ball at ${start <= 50 ? 'their ' + start : 'your ' + (100 - start)}`;
       $('plays').innerHTML = '';
@@ -502,9 +584,11 @@
       status(`${opp.name} on offense.`);
     }
 
+    // The computer's offense (1-player mode)
     function showDefense() {
+      if (game.twoP) return offensePicker(game.poss);
       mirror = true;
-      setPadMode('defense');
+      setPads();
       const g = game;
       camX = clampCam(10 + g.ballOn - 18);
       updateBoard();
@@ -528,9 +612,15 @@
         }
         status(`${opp.name} are going for it on 4th down!`);
       }
+      defensePicker('you', scheme => callDefense(scheme));
+    }
+
+    function defensePicker(defSide, cb) {
+      const g = game;
       $('pickPanel').classList.remove('hidden');
-      $('pickTitle').textContent = g.conv ? '🛡️ Stop the two-point try! Pick a defense'
-        : `🛡️ Your defense: ${['', '1st', '2nd', '3rd', '4th'][g.down]} & ${g.ballOn + g.toGo >= 100 ? 'Goal' : g.toGo}. Pick a defense`;
+      const lbl = g.twoP ? `${who(defSide)} defense` : 'Your defense';
+      $('pickTitle').textContent = g.conv ? `🛡️ ${lbl}: stop the two-point try! Pick a defense`
+        : `🛡️ ${lbl}: ${['', '1st', '2nd', '3rd', '4th'][g.down]} & ${g.ballOn + g.toGo >= 100 ? 'Goal' : g.toGo}. Pick a defense`;
       $('plays').innerHTML = '';
       const opts = [
         ['base', '🛡️ Base', 'Good against everything'],
@@ -540,7 +630,7 @@
       for (const [id, label, small] of opts) {
         const b = document.createElement('button');
         b.innerHTML = `${label}<small>${small}</small>`;
-        b.onclick = () => callDefense(id);
+        b.onclick = () => { $('pickPanel').classList.add('hidden'); cb(id); };
         $('plays').appendChild(b);
       }
     }
@@ -554,16 +644,15 @@
     }
 
     function callDefense(scheme) {
-      $('pickPanel').classList.add('hidden');
       const type = cpuPickPlay();
       setupPlay('cpu', type, scheme);
       status('🛡️ Move your player (gold ring) to make the stop!');
     }
 
-    // When their drive ends, you get the ball at `youOn` (your own yard line)
+    // When the other team's drive ends, Player 1 / you get the ball at `youOn` (your own yard line)
     function endCpuPossession(youOn, msg) {
       youOn = Math.max(1, Math.min(99, Math.round(youOn)));
-      changePoss(() => startYourDrive(youOn, msg || `Your ball at the ${spotText(youOn)}.`));
+      changePoss(() => startYourDrive(youOn, msg || `${game.twoP ? "Player 1's" : 'Your'} ball at the ${spotText(youOn)}.`));
     }
 
     // ================= Playing a down =================
@@ -575,8 +664,8 @@
       mirror = !youOff;
       scheme = scheme || 'base';
       const L = 10 + game.ballOn, M = FW / 2;
-      const d = youOff ? game.d.def : 0.95;
-      const o = youOff ? 1 : game.d.off;
+      const d = game.twoP ? 0.92 : youOff ? game.d.def : 0.95;
+      const o = game.twoP ? 1 : youOff ? 1 : game.d.off;
       const P = [];
       // offense
       const ol = [-4, -2, 0, 2, 4].map((dy, i) => mk('off', 'OL', L - 0.8, M + dy, [72, 66, 55, 64, 78][i], 4.6));
@@ -621,11 +710,13 @@
         offTeam, youOff, type, scheme, t: 0, P, qb, rb, receivers: [wr1, te, wr2, rb], L,
         off: P.filter(p => p.team === 'off'), def: P.filter(p => p.team === 'def'),
         carrier: null, ballHolder: qb, ball: null, over: false, endT: 0, result: null,
-        burst: 0, burstUsed: false, blockMul: youOff ? game.d.block : game.d.cpuBlock,
+        burst: 0, burstUsed: false, blockMul: game.twoP ? 1 : youOff ? game.d.block : game.d.cpuBlock,
         hole: FW / 2 + (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 4),
         // the computer QB throws after reading the defense for a moment
         qbTime: type === 'deep' ? 2.1 + Math.random() * 1.0 : 1.2 + Math.random() * 1.0,
-        ctrl: youOff ? null : lbs[1],
+        ctrl: youOff && !game.twoP ? null : lbs[1],
+        humanOff: youOff || game.twoP,
+        offIn: inputs[youOff ? 1 : 2], defIn: inputs[youOff ? 2 : 1], defWas: false,
         switchCool: 0,
       };
       camX = clampCam(L - 18);
@@ -641,8 +732,9 @@
       p.x += p.vx * dt; p.y += p.vy * dt;
     }
 
-    const input = { up: false, down: false, left: false, right: false, burst: false };
-    let burstWas = false;
+    const blank = () => ({ up: false, down: false, left: false, right: false, burst: false });
+    const inputs = { 1: blank(), 2: blank() };
+    const input = inputs[1];
 
     // The computer's ball carrier dodges your defenders
     function cpuSteer(pl, c) {
@@ -694,7 +786,7 @@
       // Handoff on runs
       if (isRun && !pl.carrier && pl.t > 0.45) { pl.carrier = pl.rb; pl.ballHolder = pl.rb; }
       // The computer quarterback looks for an open receiver
-      if (!pl.youOff && !isRun && !pl.ball && !pl.carrier) cpuQB(pl);
+      if (!pl.humanOff && !isRun && !pl.ball && !pl.carrier) cpuQB(pl);
 
       // ----- Offense -----
       for (const p of off) {
@@ -744,12 +836,12 @@
       // ----- Ball carrier -----
       const c = pl.carrier;
       if (c) {
-        if (pl.youOff && input.burst && !pl.burstUsed) { pl.burstUsed = true; pl.burst = 1.0; beep(700, 0.15, 'triangle'); }
+        if (pl.humanOff && pl.offIn.burst && !pl.burstUsed) { pl.burstUsed = true; pl.burst = 1.0; beep(700, 0.15, 'triangle'); }
         if (pl.burst > 0) pl.burst -= dt;
         const sp = c.speed * (c.role === 'RB' ? 1 : 0.93) * (pl.burst > 0 ? 1.45 : 1);
         c.vx = sp * 0.96;
-        if (pl.youOff) {
-          c.vy = ((input.up ? -1 : 0) + (input.down ? 1 : 0)) * 4.9;
+        if (pl.humanOff) {
+          c.vy = ((pl.offIn.up ? -1 : 0) + (pl.offIn.down ? 1 : 0)) * 4.9;
           // if you're not steering right after the handoff, the runner heads for the hole
           if (!c.vy && isRun && pl.t < 1.25) { const dy = pl.hole - c.y; c.vy = Math.abs(dy) > 0.3 ? Math.sign(dy) * 4.9 : 0; }
         } else c.vy = cpuSteer(pl, c);
@@ -763,20 +855,21 @@
       const air = pl.ball && pl.ball.flying;
       // switch your defender to the one nearest the ball
       if (pl.switchCool > 0) pl.switchCool -= dt;
-      if (!pl.youOff && input.burst && !burstWas && pl.switchCool <= 0) {
+      if (pl.ctrl && pl.defIn.burst && !pl.defWas && pl.switchCool <= 0) {
         const focus = air ? { x: pl.ball.tx, y: pl.ball.ty } : target;
         let best = pl.ctrl, bd = 1e9;
         for (const d of def) { if (d.engaged) continue; const dd = Math.hypot(d.x - focus.x, d.y - focus.y); if (dd < bd) { bd = dd; best = d; } }
         pl.ctrl = best; pl.switchCool = 0.25; beep(600, 0.06, 'triangle');
       }
-      burstWas = input.burst;
+      pl.defWas = pl.defIn.burst;
 
       for (const d of def) {
         if (d.engaged || d.stun > 0) { d.vx = d.vy = 0; continue; }
         if (d === pl.ctrl) {
           // you move this defender (the field is drawn flipped, so "left" on screen is forward for them)
-          const ix = (input.right ? 1 : 0) - (input.left ? 1 : 0), iy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-          const wx = -ix, len = Math.hypot(wx, iy);
+          const I = pl.defIn;
+          const ix = (I.right ? 1 : 0) - (I.left ? 1 : 0), iy = (I.down ? 1 : 0) - (I.up ? 1 : 0);
+          const wx = mirror ? -ix : ix, len = Math.hypot(wx, iy);
           const sp = 7.3;
           d.vx = len ? wx / len * sp : 0; d.vy = len ? iy / len * sp : 0;
           d.x += d.vx * dt; d.y = Math.max(0.3, Math.min(FW - 0.3, d.y + d.vy * dt));
@@ -833,8 +926,11 @@
             if (d.engaged || d.stun > 0) continue;
             const reach = d === pl.ctrl ? 1.15 : 0.95;
             if (Math.hypot(d.x - holder.x, d.y - holder.y) < reach) {
-              let breakChance = holder === pl.qb ? 0.08 : (pl.burst > 0 ? 0.38 : 0.2);
-              if (!pl.youOff) breakChance = d === pl.ctrl ? 0.06 : (holder === pl.qb ? 0.1 : 0.22 * game.d.off);
+              let breakChance;
+              if (holder === pl.qb) breakChance = 0.08;
+              else if (d === pl.ctrl) breakChance = game.twoP ? (pl.burst > 0 ? 0.3 : 0.12) : 0.06;
+              else if (pl.humanOff) breakChance = pl.burst > 0 ? 0.38 : 0.2;
+              else breakChance = 0.22 * game.d.off;
               if (Math.random() < breakChance) {
                 d.stun = 0.9;
                 status(pl.youOff ? '💥 Broke a tackle!' : '😬 Missed tackle!');
@@ -889,7 +985,7 @@
     function throwTo(r, byComputer) {
       const pl = play;
       if (!pl || pl.over || pl.type === 'run' || pl.ball || pl.carrier || pl.t < 0.3) return;
-      if (!pl.youOff && !byComputer) return; // you can't throw for the other team!
+      if (!pl.humanOff && !byComputer) return; // you can't throw for the computer's team!
       const qb = pl.qb;
       // aim where the receiver will be
       const speedBall = 20;
@@ -947,7 +1043,7 @@
       else if (result.kind === 'int') flashBanner('INTERCEPTION', defT.c1);
       else if (result.kind === 'sack') flashBanner('SACKED!', defT.c1);
       else if (result.kind === 'safety') flashBanner('SAFETY', defT.c1);
-      else if (!play.youOff && result.by === play.ctrl && result.kind === 'tackle') { flashBanner('BIG HIT!', you.c1); beep(180, 0.15, 'square'); }
+      else if (play.ctrl && result.by === play.ctrl && result.kind === 'tackle') { flashBanner('BIG HIT!', defT.c1); beep(180, 0.15, 'square'); }
       else beep(220, 0.12);
     }
 
@@ -967,12 +1063,13 @@
         return endCpuPossession(25);
       }
       if (r.kind === 'td') {
-        if (youOff) {
-          g.score[0] += 6;
-          status(`🎉 TOUCHDOWN ${you.name}! +6. Kick the extra point or go for two?`);
+        if (youOff || g.twoP) {
+          const side = youOff ? 'you' : 'cpu';
+          g.score[youOff ? 0 : 1] += 6;
+          status(`🎉 TOUCHDOWN ${teamOf(side).name}! +6. Kick the extra point or go for two?`);
           updateBoard();
           play = null;
-          setTimeout(chooseAfterTouchdown, 700);
+          setTimeout(() => chooseAfterTouchdown(side), 700);
           return;
         }
         g.score[1] += 6;
@@ -1015,7 +1112,7 @@
           beep(youOff ? 990 : 300, 0.12);
         } else {
           g.down++;
-          status((r.kind === 'sack' ? what : what + yards) + (!youOff && r.by === play.ctrl ? ' 💪 Nice tackle!' : ''));
+          status((r.kind === 'sack' ? what : what + yards) + (play.ctrl && r.by === play.ctrl ? ' 💪 Nice tackle!' : ''));
         }
       }
       if (g.down > 4) {
@@ -1025,19 +1122,20 @@
       }
       updateBoard();
       play = null;
-      setTimeout(youOff ? showPlays : showDefense, 300);
+      setTimeout(youOff || g.twoP ? showPlays : showDefense, 300);
     }
 
     // ================= Kicks (field goals & extra points) =================
     // You stop a sliding marker in the green zone. The computer's kicks use their odds.
     function startKick(opts, done) {
       const zone = Math.max(0.14, Math.min(0.6, 0.62 - (opts.dist - 18) * 0.0105));
-      kick = Object.assign({ phase: opts.team === 'you' ? 'aim' : 'wait', marker: -0.5, dir: 1, zone, t: 0, done }, opts);
+      const human = opts.team === 'you' || game.twoP;
+      kick = Object.assign({ phase: human ? 'aim' : 'wait', marker: -0.5, dir: 1, zone, t: 0, done }, opts);
       kick.speed = 1.0 + Math.max(0, opts.dist - 20) * 0.017;
       $('pickPanel').classList.add('hidden');
-      if (opts.team === 'you') {
-        setPadMode('kick');
-        status(`🥅 ${opts.kind === 'pat' ? 'Extra point' : `${opts.dist}-yard field goal`}: tap when the marker is in the green!`);
+      if (human) {
+        setPads();
+        status(`🥅 ${game.twoP ? who(opts.team) + ': ' : ''}${opts.kind === 'pat' ? 'Extra point' : `${opts.dist}-yard field goal`}: tap when the marker is in the green!`);
       } else {
         const good = Math.random() < opts.p;
         const half = zone / 2;
@@ -1056,6 +1154,7 @@
       kick.good = inZone && !kick.short;
       kick.phase = 'fly'; kick.t = 0;
       beep(140, 0.12, 'square');
+      setPads();
     }
     function stepKick(dt) {
       const k = kick;
@@ -1353,13 +1452,13 @@
           const P = play.P.slice().sort((a, b) => a.y - b.y);
           P.forEach(drawPlayer);
           // receiver labels for throwing
-          if (play.youOff && play.type !== 'run' && !play.ball && !play.carrier && !play.over) {
+          if (play.humanOff && play.type !== 'run' && !play.ball && !play.carrier && !play.over) {
             play.receivers.forEach((r, i) => {
               const X = sx(r.x), Y = sy(r.y) - PPY * 1.4;
               ctx.fillStyle = '#ffd23f';
               ctx.beginPath(); ctx.arc(X, Y, 10, 0, 7); ctx.fill();
               ctx.fillStyle = '#111'; ctx.font = '800 13px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText(i + 1, X, Y + 1);
+              ctx.fillText(play.youOff ? i + 1 : [7, 8, 9, 0][i], X, Y + 1);
               ctx.strokeStyle = 'rgba(255,210,63,0.7)'; ctx.lineWidth = 2;
               ctx.beginPath(); ctx.arc(sx(r.x), sy(r.y), PPY * (1.2 + 0.2 * Math.sin(performance.now() / 150)), 0, 7); ctx.stroke();
             });
@@ -1405,35 +1504,44 @@
     }
 
     // ================= Controls =================
-    const keyMap = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'burst', ShiftLeft: 'burst', ShiftRight: 'burst' };
+    // 1 player: arrows or WASD.  2 players: Player 1 = WASD + Space, Player 2 = arrows + Enter
+    const KEYS_1P = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'burst', ShiftLeft: 'burst', ShiftRight: 'burst' };
+    const KEYS_P1 = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right', Space: 'burst', KeyF: 'burst', ShiftLeft: 'burst' };
+    const KEYS_P2 = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'burst', NumpadEnter: 'burst', Slash: 'burst', ShiftRight: 'burst' };
+    function keyFor(code) {
+      if (!game || !game.twoP) return KEYS_1P[code] ? [1, KEYS_1P[code]] : null;
+      if (KEYS_P1[code]) return [1, KEYS_P1[code]];
+      if (KEYS_P2[code]) return [2, KEYS_P2[code]];
+      return null;
+    }
     addEventListener('keydown', e => {
       if ($('gameArea').classList.contains('hidden')) return;
-      if (keyMap[e.code]) { input[keyMap[e.code]] = true; e.preventDefault(); }
-      if (kick && (e.code === 'Space' || e.code === 'Enter')) { kickNow(); e.preventDefault(); }
+      const k = keyFor(e.code);
+      if (k) { inputs[k[0]][k[1]] = true; e.preventDefault(); }
+      if (kick && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')) { kickNow(); e.preventDefault(); }
+      if (!play) return;
       const n = parseInt(e.key);
-      if (play && play.youOff && n >= 1 && n <= 4) throwTo(play.receivers[n - 1]);
+      // Player 1 throws with 1-4; in 2-player mode Player 2 throws with 7 8 9 0
+      if (play.youOff && n >= 1 && n <= 4) throwTo(play.receivers[n - 1]);
+      if (game.twoP && !play.youOff) { const i = { 7: 0, 8: 1, 9: 2, 0: 3 }[e.key]; if (i != null) throwTo(play.receivers[i]); }
     });
-    addEventListener('keyup', e => { if (keyMap[e.code]) input[keyMap[e.code]] = false; });
-    addEventListener('blur', () => { for (const k in input) input[k] = false; });
+    addEventListener('keyup', e => { const k = keyFor(e.code); if (k) inputs[k[0]][k[1]] = false; });
+    addEventListener('blur', () => { for (const n of [1, 2]) for (const k in inputs[n]) inputs[n][k] = false; });
 
-    function holdButton(el, key) {
-      const on = e => { e.preventDefault(); input[key] = true; el.classList.add('held'); if (key === 'burst' && kick) kickNow(); try { el.setPointerCapture(e.pointerId); } catch (_) {} };
-      const off = () => { input[key] = false; el.classList.remove('held'); };
+    function holdButton(el, p, key) {
+      const on = e => { e.preventDefault(); inputs[p][key] = true; el.classList.add('held'); if (key === 'burst' && kick) kickNow(); try { el.setPointerCapture(e.pointerId); } catch (_) {} };
+      const off = () => { inputs[p][key] = false; el.classList.remove('held'); };
       el.addEventListener('pointerdown', on);
       el.addEventListener('pointerup', off);
       el.addEventListener('pointercancel', off);
       el.addEventListener('lostpointercapture', off);
       el.addEventListener('contextmenu', e => e.preventDefault());
     }
-    holdButton($('upBtn'), 'up');
-    holdButton($('downBtn'), 'down');
-    holdButton($('leftBtn'), 'left');
-    holdButton($('rightBtn'), 'right');
-    holdButton($('burstBtn'), 'burst');
+    document.querySelectorAll('.pad button').forEach(b => holdButton(b, +b.dataset.p, b.dataset.k));
 
     canvas.addEventListener('pointerdown', e => {
       if (kick) { kickNow(); return; }
-      if (!play || !play.youOff || play.type === 'run' || play.ball || play.carrier || play.over) return;
+      if (!play || !play.humanOff || play.type === 'run' || play.ball || play.carrier || play.over) return;
       const rect = canvas.getBoundingClientRect();
       const px = (e.clientX - rect.left) * CW / rect.width;
       const x = (mirror ? (CW - px) : px) / PPY + camX;
@@ -1459,7 +1567,7 @@
 
     $('kickoff').onclick = startGame;
     renderSetup();
-    window.__fb = { get game() { return game; }, get play() { return play; }, get kick() { return kick; }, get camX() { return camX; }, input, throwTo, kickNow, cpuDrive, startYourDrive, showPlays, showDefense };
+    window.__fb = { get game() { return game; }, get play() { return play; }, get kick() { return kick; }, get camX() { return camX; }, input, inputs, throwTo, kickNow, cpuDrive, startYourDrive, showPlays, showDefense };
   })();
   </script>
 </body>
