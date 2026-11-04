@@ -329,7 +329,7 @@
         ? { fill: opp.c2, ring: opp.c1, text: textOn(opp.c2) }
         : { fill: opp.c1, ring: opp.c2, text: textOn(opp.c1) };
       if (colorDist(youColors.fill, oppColors.fill) < 90) oppColors = { fill: '#ffffff', ring: opp.c1, text: '#111' };
-      game = { score: [0, 0], drives: 0, ot: 0, ballOn: 25, down: 1, toGo: 10, poss: 'you', d: DIFF[prefs.diff], over: false };
+      game = { score: [0, 0], drives: 0, ot: 0, ballOn: 25, down: 1, toGo: 10, poss: 'you', d: DIFF[prefs.diff], over: false, conv: null };
       play = null; kick = null; mirror = false;
       $('setup').classList.add('hidden');
       $('gameArea').classList.remove('hidden');
@@ -360,7 +360,7 @@
       $('oppPoss').style.visibility = game.poss === 'cpu' ? 'visible' : 'hidden';
       const goal = game.ballOn + game.toGo >= 100;
       const who = game.poss === 'you' ? '' : `${opp.abbr}: `;
-      $('dd').textContent = `${who}${['', '1st', '2nd', '3rd', '4th'][Math.min(4, game.down)]} & ${goal ? 'Goal' : game.toGo} · ${spotText(game.ballOn)}`;
+      $('dd').textContent = game.conv ? `${who}2-point try` : `${who}${['', '1st', '2nd', '3rd', '4th'][Math.min(4, game.down)]} & ${goal ? 'Goal' : game.toGo} · ${spotText(game.ballOn)}`;
     }
     const status = t => { $('status').textContent = t; };
 
@@ -395,8 +395,8 @@
 
     function showPlays() {
       $('pickPanel').classList.remove('hidden');
-      $('pickTitle').textContent = '🏈 Your offense: pick a play';
-      const fourth = game.down === 4;
+      $('pickTitle').textContent = game.conv ? '🏈 Two-point try: pick a play' : '🏈 Your offense: pick a play';
+      const fourth = game.down === 4 && !game.conv;
       const fgDist = 117 - game.ballOn;
       const opts = [
         ['run', '🏃 Run', 'Steer past tacklers'],
@@ -416,6 +416,36 @@
         $('plays').appendChild(b);
       }
       if (fourth) status(`4th down! Go for it, or kick?`);
+    }
+
+    function chooseAfterTouchdown() {
+      setPadMode('offense');
+      $('pickPanel').classList.remove('hidden');
+      $('pickTitle').textContent = '🎉 Touchdown! What next?';
+      $('plays').innerHTML = '';
+      const kickBtn = document.createElement('button');
+      kickBtn.className = 'special';
+      kickBtn.innerHTML = '🥅 Kick extra point<small>+1 · easy kick</small>';
+      kickBtn.onclick = () => {
+        $('pickPanel').classList.add('hidden');
+        startKick({ team: 'you', dist: 33, kind: 'pat' }, good => {
+          if (good) game.score[0] += 1;
+          status(good ? '✅ Extra point is good! +1' : '❌ The extra point is no good.');
+          updateBoard();
+          changePoss(() => cpuDrive(25));
+        });
+      };
+      const twoBtn = document.createElement('button');
+      twoBtn.innerHTML = '🏈 Go for two<small>+2 · one play from the 2-yard line</small>';
+      twoBtn.onclick = () => {
+        game.conv = 'you'; game.ballOn = 98; game.down = 1; game.toGo = 2;
+        mirror = false;
+        camX = clampCam(10 + game.ballOn - 18);
+        updateBoard();
+        status('🏈 Two-point try! Get into the end zone on one play.');
+        showPlays();
+      };
+      $('plays').append(kickBtn, twoBtn);
     }
 
     function callPlay(id) {
@@ -479,7 +509,7 @@
       camX = clampCam(10 + g.ballOn - 18);
       updateBoard();
       // 4th down: they decide what to do
-      if (g.down === 4) {
+      if (g.down === 4 && !g.conv) {
         const dist = 117 - g.ballOn;
         if (g.ballOn >= 62) {
           status(`${opp.name} try a ${dist}-yard field goal…`);
@@ -499,7 +529,8 @@
         status(`${opp.name} are going for it on 4th down!`);
       }
       $('pickPanel').classList.remove('hidden');
-      $('pickTitle').textContent = `🛡️ Your defense: ${['', '1st', '2nd', '3rd', '4th'][g.down]} & ${g.ballOn + g.toGo >= 100 ? 'Goal' : g.toGo}. Pick a defense`;
+      $('pickTitle').textContent = g.conv ? '🛡️ Stop the two-point try! Pick a defense'
+        : `🛡️ Your defense: ${['', '1st', '2nd', '3rd', '4th'][g.down]} & ${g.ballOn + g.toGo >= 100 ? 'Goal' : g.toGo}. Pick a defense`;
       $('plays').innerHTML = '';
       const opts = [
         ['base', '🛡️ Base', 'Good against everything'],
@@ -516,6 +547,7 @@
 
     function cpuPickPlay() {
       const g = game, r = Math.random();
+      if (g.conv) return r < 0.5 ? 'run' : 'short';
       if (g.toGo <= 2) return r < 0.65 ? 'run' : r < 0.9 ? 'short' : 'deep';
       if (g.down >= 3 && g.toGo >= 7) return r < 0.15 ? 'run' : r < 0.65 ? 'short' : 'deep';
       return r < 0.45 ? 'run' : r < 0.8 ? 'short' : 'deep';
@@ -911,7 +943,7 @@
       play.over = true; play.result = result; play.endT = result.kind === 'td' ? 1.6 : 1.1;
       play.P.forEach(p => { p.vx = p.vy = 0; });
       const offT = play.youOff ? you : opp, defT = play.youOff ? opp : you;
-      if (result.kind === 'td') { flashBanner('TOUCHDOWN!', offT.c1); beep(play.youOff ? 660 : 200, 0.25); }
+      if (result.kind === 'td') { flashBanner(game.conv ? 'TWO POINTS!' : 'TOUCHDOWN!', offT.c1); beep(play.youOff ? 660 : 200, 0.25); }
       else if (result.kind === 'int') flashBanner('INTERCEPTION', defT.c1);
       else if (result.kind === 'sack') flashBanner('SACKED!', defT.c1);
       else if (result.kind === 'safety') flashBanner('SAFETY', defT.c1);
@@ -921,21 +953,39 @@
 
     function resolvePlay(r) {
       const g = game, youOff = play.youOff;
+      if (g.conv) {
+        const good = r.kind === 'td';
+        g.conv = null;
+        play = null;
+        if (youOff) {
+          if (good) g.score[0] += 2;
+          status(good ? '🎉 Two-point conversion is GOOD! +2' : '❌ The two-point try fails.');
+          return changePoss(() => cpuDrive(25));
+        }
+        if (good) g.score[1] += 2;
+        status(good ? `${opp.name} convert the two-point try.` : '🛡️ You stopped the two-point try!');
+        return endCpuPossession(25);
+      }
       if (r.kind === 'td') {
         if (youOff) {
           g.score[0] += 6;
-          status(`🎉 TOUCHDOWN ${you.name}! +6. Now kick the extra point!`);
+          status(`🎉 TOUCHDOWN ${you.name}! +6. Kick the extra point or go for two?`);
           updateBoard();
           play = null;
-          setTimeout(() => startKick({ team: 'you', dist: 33, kind: 'pat' }, good => {
-            if (good) g.score[0] += 1;
-            status(good ? '✅ Extra point is good! +1' : '❌ The extra point is no good.');
-            updateBoard();
-            changePoss(() => cpuDrive(25));
-          }), 900);
+          setTimeout(chooseAfterTouchdown, 700);
           return;
         }
         g.score[1] += 6;
+        // Sometimes the other team goes for two
+        const behind = g.score[0] - g.score[1];
+        const goForTwo = Math.random() < (behind === 2 || behind === -5 || behind === 1 ? 0.6 : 0.1);
+        if (goForTwo) {
+          status(`${opp.name} score a touchdown… and they're going for TWO! Stop them!`);
+          updateBoard();
+          play = null;
+          setTimeout(() => { g.conv = 'cpu'; g.ballOn = 98; g.down = 1; g.toGo = 2; showDefense(); }, 1200);
+          return;
+        }
         const pat = Math.random() < 0.95;
         if (pat) g.score[1] += 1;
         status(`${opp.name} score a touchdown${pat ? ' and make the extra point' : ', but miss the extra point'}.`);
