@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Typing Race – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    h1 { margin: 0 0 4px; text-align: center; }
+    .sub { color: var(--muted); margin: 0 0 14px; text-align: center; }
+    .hidden { display: none !important; }
+    .wrap { width: min(100%, 760px); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    .card {
+      width: 100%;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px; box-shadow: 0 6px 20px var(--shadow);
+    }
+    #startBtn { font-size: 1.15rem; padding: 12px 30px; }
+    .best { color: var(--muted); font-size: 0.95rem; }
+
+    /* Track */
+    .track { width: 100%; display: flex; flex-direction: column; gap: 4px; }
+    .lane {
+      position: relative; height: 46px;
+      background: repeating-linear-gradient(90deg, #555a66 0 40px, #4d525d 40px 80px);
+      border-radius: 6px; overflow: hidden;
+    }
+    .lane::after {
+      content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 14px;
+      background: repeating-conic-gradient(#fff 0 25%, #222 0 50%) 0 0 / 14px 14px;
+    }
+    .lane .lane-line { position: absolute; left: 0; right: 0; top: 50%; border-top: 2px dashed rgba(255,255,255,0.35); }
+    .car {
+      position: absolute; top: 50%; left: 0;
+      transform: translate(0, -50%);
+      font-size: 30px; line-height: 1;
+      transition: left 0.15s linear;
+    }
+    .car .emoji { display: inline-block; transform: scaleX(-1); }
+    .lane .label {
+      position: absolute; left: 6px; top: 2px; font-size: 0.7rem; font-weight: 700;
+      color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none; z-index: 2;
+    }
+    .lane.you { box-shadow: 0 0 0 3px var(--accent); }
+
+    /* Text */
+    #passage {
+      font-size: 1.25rem; line-height: 1.7;
+      padding: 14px; border-radius: 10px;
+      background: var(--bg); border: 1px solid var(--border);
+      user-select: none; -webkit-user-select: none; cursor: text;
+      word-wrap: break-word;
+    }
+    #passage .done { color: var(--success); }
+    #passage .cur { background: rgba(36, 87, 197, 0.18); border-radius: 4px; }
+    #passage .cur .ok { color: var(--success); }
+    #passage .cur .bad { background: var(--danger); color: #fff; border-radius: 2px; }
+    #passage .todo { color: var(--text); }
+    #typeBox {
+      width: 100%; font: inherit; font-size: 1.25rem;
+      padding: 12px 14px; border-radius: 10px;
+      border: 2px solid var(--border); background: var(--surface); color: var(--text);
+      margin-top: 10px;
+    }
+    #typeBox:focus { outline: none; border-color: var(--accent); }
+    #typeBox.wrong { border-color: var(--danger); background: rgba(230, 57, 70, 0.08); }
+    .stats { display: flex; gap: 18px; justify-content: center; color: var(--muted); font-weight: 600; margin-top: 8px; flex-wrap: wrap; }
+    .stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+    #countdown {
+      font-size: 3rem; font-weight: 900; text-align: center; min-height: 1.2em;
+    }
+    .results h2 { margin: 0 0 6px; text-align: center; }
+    .results .big { font-size: 2.4rem; font-weight: 900; text-align: center; }
+    .results table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    .results td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+    .results td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="wrap">
+      <h1>⌨️ Typing Race</h1>
+      <p class="sub">Type the words as fast as you can to beat the other cars!</p>
+
+      <div class="card" id="setupCard">
+        <div class="row" style="margin-bottom:12px">
+          <span>Level:</span>
+          <button data-d="easy">🐢 Easy</button>
+          <button data-d="normal">🚗 Normal</button>
+          <button data-d="hard">🚀 Hard</button>
+        </div>
+        <div class="row">
+          <button id="startBtn" class="primary">🏁 Start race</button>
+        </div>
+        <p class="best row" id="bestLine"></p>
+      </div>
+
+      <div class="track" id="track"></div>
+
+      <div class="card hidden" id="raceCard">
+        <div id="countdown"></div>
+        <div id="passage"></div>
+        <input id="typeBox" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="Type here…" aria-label="Type the highlighted word">
+        <div class="stats">
+          <span>Speed: <b id="wpm">0</b> WPM</span>
+          <span>Accuracy: <b id="acc">100</b>%</span>
+          <span>Time: <b id="time">0.0</b>s</span>
+        </div>
+      </div>
+
+      <div class="card results hidden" id="resultCard">
+        <h2 id="placeText"></h2>
+        <div class="big" id="finalWpm"></div>
+        <table id="resultTable"></table>
+        <div class="row">
+          <button id="againBtn" class="primary">🏁 Race again</button>
+          <button id="changeBtn">Change level</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script>
+  (function () {
+    const PASSAGES = {
+      easy: [
+        'The cat sat in the sun and took a long nap on the warm rug.',
+        'I like to run and jump and play ball with my best friend.',
+        'A big red fox ran fast past the old barn and into the woods.',
+        'We had pizza for lunch and ice cream for a snack at the park.',
+        'The dog dug a hole in the yard and hid his bone deep inside.',
+        'My bike is blue and it goes fast when I ride down the hill.',
+        'The frog sat on a log and sang a song to the moon at night.',
+        'Mom made pancakes and we ate them with lots of sweet syrup.',
+      ],
+      normal: [
+        'The brave knight rode across the bridge to rescue the town from a grumpy dragon who loved to steal pies.',
+        'Every summer we drive to the lake, catch tiny fish, and roast marshmallows by the campfire until the stars come out.',
+        'The robot rolled into the kitchen, beeped twice, and tried to make toast, but it only made a very big mess.',
+        'Our team practiced every day after school, and when the big game came, we passed the ball and scored the winning goal.',
+        'A rocket zoomed into space, circled the moon three times, and then gently landed back home in the middle of the ocean.',
+        'The library has thousands of books about dinosaurs, pirates, planets, and secret maps that lead to buried treasure.',
+      ],
+      hard: [
+        'Quickly, the explorers climbed the jagged mountain; halfway up, a sudden storm forced them to shelter inside a hidden cave.',
+        'Scientists believe the giant squid can grow over forty feet long, yet very few people have ever seen one alive in the deep sea.',
+        'After building a wobbly treehouse, the twins added a rope ladder, a secret password, and a bucket elevator for snacks!',
+        'The championship came down to the final second: the crowd held its breath, the ball spun through the air, and it went in.',
+        'Thunder rumbled across the valley while the wizard mixed glowing potions, carefully measuring each strange, bubbling drop.',
+      ],
+    };
+    const BOTS = {
+      easy:   [{ name: 'Turtle Tom', wpm: 12, car: '🚙' }, { name: 'Slowpoke Sue', wpm: 17, car: '🚕' }, { name: 'Rusty Rex', wpm: 22, car: '🚐' }],
+      normal: [{ name: 'Zippy Zoe', wpm: 24, car: '🚙' }, { name: 'Speedy Sam', wpm: 32, car: '🚕' }, { name: 'Rocket Ray', wpm: 40, car: '🚓' }],
+      hard:   [{ name: 'Turbo Tina', wpm: 42, car: '🚙' }, { name: 'Lightning Lou', wpm: 55, car: '🚓' }, { name: 'Max Speed', wpm: 70, car: '🚒' }],
+    };
+    const BEST_KEY = 'typing-race-best';
+
+    let level = 'normal';
+    try { level = localStorage.getItem('typing-race-level') || 'normal'; } catch (e) {}
+    let best = {};
+    try { best = JSON.parse(localStorage.getItem(BEST_KEY)) || {}; } catch (e) {}
+
+    const $ = id => document.getElementById(id);
+    const typeBox = $('typeBox');
+    let race = null, timer = null;
+
+    function showBest() {
+      $('bestLine').textContent = best[level] ? `🏆 Your best on this level: ${best[level]} WPM` : 'Pick a level and press Start!';
+      document.querySelectorAll('[data-d]').forEach(b => b.classList.toggle('active', b.dataset.d === level));
+    }
+    document.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+      level = b.dataset.d;
+      try { localStorage.setItem('typing-race-level', level); } catch (e) {}
+      showBest();
+      buildTrack();
+    });
+
+    function buildTrack() {
+      const racers = [{ name: 'You', car: '🏎️', you: true }].concat(BOTS[level]);
+      $('track').innerHTML = racers.map((r, i) => `
+        <div class="lane ${r.you ? 'you' : ''}">
+          <div class="lane-line"></div>
+          <span class="label">${r.name}${r.wpm ? ` · ${r.wpm} WPM` : ''}</span>
+          <span class="car" id="car${i}"><span class="emoji">${r.car}</span></span>
+        </div>`).join('');
+    }
+
+    function setCar(i, frac) {
+      const car = $('car' + i);
+      if (car) car.style.left = `calc(${Math.min(1, frac) * 100}% - ${Math.min(1, frac) * 52}px)`;
+    }
+
+    function renderPassage() {
+      const r = race;
+      let html = '';
+      r.words.forEach((w, i) => {
+        const word = i < r.words.length - 1 ? w + ' ' : w;
+        if (i < r.wordIdx) html += `<span class="done">${esc(word)}</span>`;
+        else if (i === r.wordIdx) {
+          const typed = typeBox.value;
+          let inner = '';
+          for (let c = 0; c < word.length; c++) {
+            const ch = word[c];
+            if (c < typed.length) inner += `<span class="${typed[c] === ch ? 'ok' : 'bad'}">${esc(ch)}</span>`;
+            else inner += esc(ch);
+          }
+          html += `<span class="cur">${inner}</span>`;
+        } else html += `<span class="todo">${esc(word)}</span>`;
+      });
+      $('passage').innerHTML = html;
+    }
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+    function startRace() {
+      const list = PASSAGES[level];
+      const text = list[Math.floor(Math.random() * list.length)];
+      race = {
+        text, words: text.split(' '), wordIdx: 0, doneChars: 0,
+        keys: 0, mistakes: 0, start: 0, running: false, finished: false,
+        bots: BOTS[level].map(b => ({ ...b, wpm: b.wpm * (0.9 + Math.random() * 0.2), done: 0, time: null })),
+        youTime: null,
+      };
+      buildTrack();
+      $('setupCard').classList.add('hidden');
+      $('resultCard').classList.add('hidden');
+      $('raceCard').classList.remove('hidden');
+      typeBox.value = '';
+      typeBox.disabled = false;
+      typeBox.classList.remove('wrong');
+      typeBox.focus(); // opens the phone keyboard right away
+      renderPassage();
+      updateStats();
+      let n = 3;
+      $('countdown').textContent = n;
+      clearInterval(timer);
+      const cd = setInterval(() => {
+        n--;
+        if (n > 0) $('countdown').textContent = n;
+        else {
+          clearInterval(cd);
+          $('countdown').textContent = 'GO!';
+          setTimeout(() => { if (race && race.running) $('countdown').textContent = ''; }, 700);
+          race.running = true;
+          race.start = performance.now();
+          typeBox.value = '';
+          typeBox.focus();
+          timer = setInterval(tick, 100);
+        }
+      }, 800);
+    }
+
+    function totalChars() { return race.text.length; }
+    function typedChars() {
+      const w = race.words[race.wordIdx] || '';
+      const v = typeBox.value;
+      let ok = 0;
+      while (ok < v.length && ok < w.length + 1 && v[ok] === (w + ' ')[ok]) ok++;
+      return race.doneChars + Math.min(ok, w.length);
+    }
+    function elapsedMin() { return (performance.now() - race.start) / 60000; }
+
+    function updateStats() {
+      if (!race) return;
+      const mins = race.running ? elapsedMin() : 0;
+      const wpm = mins > 0.02 ? Math.round(typedChars() / 5 / mins) : 0;
+      $('wpm').textContent = wpm;
+      $('acc').textContent = race.keys ? Math.max(0, Math.round(100 * (race.keys - race.mistakes) / race.keys)) : 100;
+      $('time').textContent = race.running ? ((performance.now() - race.start) / 1000).toFixed(1) : '0.0';
+    }
+
+    function tick() {
+      if (!race || !race.running) return;
+      const mins = elapsedMin();
+      race.bots.forEach((b, i) => {
+        if (b.time != null) return;
+        // a little wobble so bots don't move perfectly smoothly
+        const chars = b.wpm * 5 * mins * (1 + Math.sin(mins * 40 + i) * 0.04);
+        b.done = Math.min(1, chars / totalChars());
+        if (b.done >= 1) b.time = mins;
+        setCar(i + 1, b.done);
+      });
+      updateStats();
+      // Race ends for you when you finish; if you're very slow it ends 20s after the last bot
+      const allBots = race.bots.every(b => b.time != null);
+      if (allBots && !race.youTime) {
+        const lastBot = Math.max(...race.bots.map(b => b.time));
+        if (mins - lastBot > 0.34) finish();
+      }
+    }
+
+    typeBox.addEventListener('input', (e) => {
+      if (!race || !race.running) { typeBox.value = ''; return; }
+      let v = typeBox.value;
+      const word = race.words[race.wordIdx];
+      const isLast = race.wordIdx === race.words.length - 1;
+      const target = isLast ? word : word + ' ';
+      // Count keystrokes (only when text got longer)
+      if (e.inputType && e.inputType.startsWith('insert')) {
+        race.keys++;
+        if (!target.startsWith(v)) race.mistakes++;
+      }
+      if (v === target || (isLast && v.trim() === word)) {
+        race.doneChars += target.length;
+        race.wordIdx++;
+        typeBox.value = '';
+        v = '';
+        if (race.wordIdx >= race.words.length) { renderPassage(); finish(); return; }
+      }
+      typeBox.classList.toggle('wrong', !target.startsWith(v));
+      setCar(0, typedChars() / totalChars());
+      renderPassage();
+      updateStats();
+    });
+    // Enter also moves on if the word is right (handy on phones)
+    typeBox.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && race && race.running) {
+        const word = race.words[race.wordIdx];
+        if (typeBox.value.trim() === word) {
+          typeBox.value = word + (race.wordIdx === race.words.length - 1 ? '' : ' ');
+          typeBox.dispatchEvent(new InputEvent('input', { inputType: 'insertText' }));
+          race.keys--; // don't double count
+        }
+        e.preventDefault();
+      }
+    });
+    $('passage').addEventListener('click', () => typeBox.focus());
+
+    function finish() {
+      if (!race || race.finished) return;
+      race.finished = true;
+      race.running = false;
+      clearInterval(timer);
+      typeBox.disabled = true;
+      typeBox.blur();
+      const mins = elapsedMin();
+      const done = race.wordIdx >= race.words.length;
+      race.youTime = done ? mins : null;
+      setCar(0, typedChars() / totalChars());
+      const wpm = Math.round(typedChars() / 5 / mins);
+      const acc = race.keys ? Math.max(0, Math.round(100 * (race.keys - race.mistakes) / race.keys)) : 100;
+
+      // Bots that haven't finished get their projected time
+      race.bots.forEach(b => { if (b.time == null) b.time = totalChars() / (b.wpm * 5); });
+      const results = [{ name: 'You', time: done ? mins : Infinity, you: true }].concat(race.bots.map(b => ({ name: b.name, time: b.time })));
+      results.sort((a, b) => a.time - b.time);
+      const place = results.findIndex(r => r.you) + 1;
+      const medal = ['🥇', '🥈', '🥉', '4th'][place - 1];
+      $('placeText').textContent = done
+        ? (place === 1 ? '🏆 You won the race!' : `You finished ${['', '1st', '2nd', '3rd', '4th'][place]}!`)
+        : 'Out of time!';
+      let newBest = false;
+      if (done && (!best[level] || wpm > best[level])) { best[level] = wpm; newBest = true; try { localStorage.setItem(BEST_KEY, JSON.stringify(best)); } catch (e) {} }
+      $('finalWpm').innerHTML = `${medal} ${wpm} WPM <div style="font-size:1rem;font-weight:600;color:var(--muted)">${acc}% accuracy${newBest ? ' · ⭐ New best!' : ''}</div>`;
+      $('resultTable').innerHTML = results.map((r, i) =>
+        `<tr${r.you ? ' style="font-weight:800"' : ''}><td>${i + 1}. ${r.name}</td><td>${isFinite(r.time) ? (r.time * 60).toFixed(1) + 's' : 'did not finish'}</td></tr>`).join('');
+      setTimeout(() => {
+        $('raceCard').classList.add('hidden');
+        $('resultCard').classList.remove('hidden');
+      }, 500);
+    }
+
+    $('startBtn').onclick = startRace;
+    $('againBtn').onclick = startRace;
+    $('changeBtn').onclick = () => {
+      $('resultCard').classList.add('hidden');
+      $('setupCard').classList.remove('hidden');
+      showBest();
+      buildTrack();
+    };
+
+    showBest();
+    buildTrack();
+  })();
+  </script>
+</body>
+</html>

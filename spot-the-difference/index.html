@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spot the Difference – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    h1 { margin: 0 0 4px; text-align: center; }
+    .sub { color: var(--muted); margin: 0 0 10px; text-align: center; }
+    .bar {
+      display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center;
+      width: min(100%, 1240px); margin-bottom: 10px;
+    }
+    .pill {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+      padding: 6px 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .dots { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); }
+    .dot.on { background: var(--success); border-color: var(--success); }
+    .pics {
+      display: grid; grid-template-columns: 1fr; gap: 10px;
+      width: min(100%, 620px);
+    }
+    @media (min-width: 900px) and (min-aspect-ratio: 4/3) {
+      .pics { grid-template-columns: 1fr 1fr; width: min(100%, 1240px); }
+    }
+    .pic { position: relative; }
+    .pic canvas {
+      display: block; width: 100%; height: auto;
+      border-radius: 12px; box-shadow: 0 6px 20px var(--shadow);
+      cursor: crosshair; touch-action: manipulation;
+    }
+    .pic .tag {
+      position: absolute; left: 8px; top: 8px;
+      background: rgba(0,0,0,0.5); color: #fff; font-size: 0.75rem; font-weight: 700;
+      padding: 2px 8px; border-radius: 999px; pointer-events: none;
+    }
+    #msg {
+      position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%);
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 22px 26px; text-align: center; box-shadow: 0 12px 40px var(--shadow);
+      z-index: 20; width: min(92vw, 380px);
+    }
+    #msg h2 { margin: 0 0 6px; }
+    #msg .stars { font-size: 2.2rem; margin: 6px 0 12px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>🔍 Spot the Difference</h1>
+    <p class="sub">Tap the things that are different in the bottom picture.</p>
+    <div class="bar">
+      <span class="pill">Level <span id="lvl">1</span></span>
+      <span class="pill">Found <span id="found">0</span>/<span id="total">5</span><span class="dots" id="dots"></span></span>
+      <span class="pill">⏱ <span id="time">0</span>s</span>
+      <button id="hintBtn">💡 Hint (<span id="hints">3</span>)</button>
+      <button id="newBtn">🔄 New picture</button>
+    </div>
+    <div class="pics">
+      <div class="pic"><canvas id="c1" width="600" height="400"></canvas><span class="tag">Picture A</span></div>
+      <div class="pic"><canvas id="c2" width="600" height="400"></canvas><span class="tag">Picture B</span></div>
+    </div>
+  </main>
+
+  <div id="msg" class="hidden">
+    <h2 id="msgTitle"></h2>
+    <div class="stars" id="msgStars"></div>
+    <p id="msgText" style="color:var(--muted);margin:0 0 14px"></p>
+    <button id="nextBtn" class="primary">Next level ▶</button>
+  </div>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script>
+  (function () {
+    const W = 600, H = 400, GROUND = 250;
+    const PALETTE = ['#e63946', '#f4a261', '#ffd23f', '#2a9d8f', '#3a86ff', '#8338ec', '#ff006e', '#ffffff', '#6d4c41', '#06d6a0'];
+
+    function rng(seed) {
+      return function () {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    // ---------- How to draw each kind of thing ----------
+    const DRAW = {
+      sun(g, it) {
+        g.fillStyle = it.color;
+        g.beginPath(); g.arc(it.x, it.y, 26 * it.s, 0, 7); g.fill();
+        g.strokeStyle = it.color; g.lineWidth = 4 * it.s;
+        for (let i = 0; i < it.rays; i++) {
+          const a = i / it.rays * Math.PI * 2;
+          g.beginPath();
+          g.moveTo(it.x + Math.cos(a) * 34 * it.s, it.y + Math.sin(a) * 34 * it.s);
+          g.lineTo(it.x + Math.cos(a) * 46 * it.s, it.y + Math.sin(a) * 46 * it.s);
+          g.stroke();
+        }
+      },
+      cloud(g, it) {
+        g.fillStyle = it.color;
+        for (const [dx, dy, r] of [[-24, 4, 18], [0, -6, 24], [26, 2, 18], [8, 10, 18], [-10, 10, 16]]) {
+          g.beginPath(); g.arc(it.x + dx * it.s, it.y + dy * it.s, r * it.s, 0, 7); g.fill();
+        }
+      },
+      tree(g, it) {
+        g.fillStyle = '#7a5230'; g.fillRect(it.x - 7 * it.s, it.y - 50 * it.s, 14 * it.s, 50 * it.s);
+        g.fillStyle = it.color;
+        g.beginPath(); g.arc(it.x, it.y - 70 * it.s, 34 * it.s, 0, 7); g.fill();
+        g.beginPath(); g.arc(it.x - 22 * it.s, it.y - 55 * it.s, 22 * it.s, 0, 7); g.fill();
+        g.beginPath(); g.arc(it.x + 22 * it.s, it.y - 55 * it.s, 22 * it.s, 0, 7); g.fill();
+        if (it.apples) {
+          g.fillStyle = '#e63946';
+          for (const [dx, dy] of [[-14, -70], [12, -80], [18, -55], [-20, -50]]) {
+            g.beginPath(); g.arc(it.x + dx * it.s, it.y + dy * it.s, 4.5 * it.s, 0, 7); g.fill();
+          }
+        }
+      },
+      house(g, it) {
+        const s = it.s, x = it.x, y = it.y;
+        g.fillStyle = it.color; g.fillRect(x - 50 * s, y - 70 * s, 100 * s, 70 * s);
+        g.fillStyle = it.roof;
+        g.beginPath(); g.moveTo(x - 60 * s, y - 70 * s); g.lineTo(x, y - 115 * s); g.lineTo(x + 60 * s, y - 70 * s); g.fill();
+        g.fillStyle = it.door; g.fillRect(x - 12 * s, y - 38 * s, 24 * s, 38 * s);
+        g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(x + 6 * s, y - 18 * s, 2.5 * s, 0, 7); g.fill();
+        g.fillStyle = '#bde0fe';
+        g.fillRect(x - 40 * s, y - 58 * s, 20 * s, 18 * s);
+        if (it.window2) g.fillRect(x + 20 * s, y - 58 * s, 20 * s, 18 * s);
+        if (it.chimney) { g.fillStyle = '#8d5524'; g.fillRect(x + 25 * s, y - 112 * s, 14 * s, 30 * s); }
+      },
+      flower(g, it) {
+        g.strokeStyle = '#2d6a4f'; g.lineWidth = 3 * it.s;
+        g.beginPath(); g.moveTo(it.x, it.y); g.lineTo(it.x, it.y - 24 * it.s); g.stroke();
+        g.fillStyle = it.color;
+        for (let i = 0; i < 5; i++) {
+          const a = i / 5 * Math.PI * 2;
+          g.beginPath(); g.arc(it.x + Math.cos(a) * 7 * it.s, it.y - 30 * it.s + Math.sin(a) * 7 * it.s, 5.5 * it.s, 0, 7); g.fill();
+        }
+        g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(it.x, it.y - 30 * it.s, 4 * it.s, 0, 7); g.fill();
+      },
+      mushroom(g, it) {
+        g.fillStyle = '#f5ebe0'; g.fillRect(it.x - 6 * it.s, it.y - 18 * it.s, 12 * it.s, 18 * it.s);
+        g.fillStyle = it.color;
+        g.beginPath(); g.arc(it.x, it.y - 18 * it.s, 18 * it.s, Math.PI, 0); g.fill();
+        if (it.spots) {
+          g.fillStyle = '#fff';
+          for (const [dx, dy] of [[-8, -24], [6, -28], [10, -21]]) { g.beginPath(); g.arc(it.x + dx * it.s, it.y + dy * it.s, 3 * it.s, 0, 7); g.fill(); }
+        }
+      },
+      bird(g, it) {
+        g.strokeStyle = it.color; g.lineWidth = 3.5 * it.s; g.lineCap = 'round';
+        g.beginPath();
+        g.moveTo(it.x - 14 * it.s, it.y - 6 * it.s);
+        g.quadraticCurveTo(it.x - 6 * it.s, it.y - 12 * it.s, it.x, it.y);
+        g.quadraticCurveTo(it.x + 6 * it.s, it.y - 12 * it.s, it.x + 14 * it.s, it.y - 6 * it.s);
+        g.stroke();
+      },
+      balloon(g, it) {
+        g.strokeStyle = '#555'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(it.x, it.y + 22 * it.s); g.quadraticCurveTo(it.x + 8, it.y + 40 * it.s, it.x, it.y + 58 * it.s); g.stroke();
+        g.fillStyle = it.color;
+        g.beginPath(); g.ellipse(it.x, it.y, 16 * it.s, 21 * it.s, 0, 0, 7); g.fill();
+        g.fillStyle = 'rgba(255,255,255,0.5)'; g.beginPath(); g.ellipse(it.x - 6 * it.s, it.y - 7 * it.s, 4 * it.s, 6 * it.s, -0.4, 0, 7); g.fill();
+      },
+      butterfly(g, it) {
+        g.fillStyle = it.color;
+        g.beginPath(); g.ellipse(it.x - 8 * it.s, it.y - 5 * it.s, 8 * it.s, 10 * it.s, -0.5, 0, 7); g.fill();
+        g.beginPath(); g.ellipse(it.x + 8 * it.s, it.y - 5 * it.s, 8 * it.s, 10 * it.s, 0.5, 0, 7); g.fill();
+        g.beginPath(); g.ellipse(it.x - 6 * it.s, it.y + 6 * it.s, 5 * it.s, 7 * it.s, 0.4, 0, 7); g.fill();
+        g.beginPath(); g.ellipse(it.x + 6 * it.s, it.y + 6 * it.s, 5 * it.s, 7 * it.s, -0.4, 0, 7); g.fill();
+        g.fillStyle = '#222'; g.fillRect(it.x - 1.5 * it.s, it.y - 10 * it.s, 3 * it.s, 20 * it.s);
+      },
+      rock(g, it) {
+        g.fillStyle = it.color;
+        g.beginPath(); g.ellipse(it.x, it.y - 10 * it.s, 24 * it.s, 14 * it.s, 0, Math.PI, 0); g.lineTo(it.x + 24 * it.s, it.y); g.lineTo(it.x - 24 * it.s, it.y); g.fill();
+        g.fillStyle = 'rgba(255,255,255,0.2)'; g.beginPath(); g.ellipse(it.x - 8 * it.s, it.y - 16 * it.s, 7 * it.s, 3 * it.s, -0.3, 0, 7); g.fill();
+      },
+      kite(g, it) {
+        g.strokeStyle = '#555'; g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(it.x, it.y + 26 * it.s); g.bezierCurveTo(it.x + 10, it.y + 50, it.x - 20, it.y + 70, it.x - 10, it.y + 90); g.stroke();
+        g.fillStyle = it.color;
+        g.beginPath(); g.moveTo(it.x, it.y - 26 * it.s); g.lineTo(it.x + 18 * it.s, it.y); g.lineTo(it.x, it.y + 26 * it.s); g.lineTo(it.x - 18 * it.s, it.y); g.fill();
+        g.strokeStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.moveTo(it.x, it.y - 26 * it.s); g.lineTo(it.x, it.y + 26 * it.s); g.moveTo(it.x - 18 * it.s, it.y); g.lineTo(it.x + 18 * it.s, it.y); g.stroke();
+      },
+      duck(g, it) {
+        g.fillStyle = it.color;
+        g.beginPath(); g.ellipse(it.x, it.y, 18 * it.s, 11 * it.s, 0, 0, 7); g.fill();
+        g.beginPath(); g.arc(it.x + 13 * it.s, it.y - 12 * it.s, 8 * it.s, 0, 7); g.fill();
+        g.fillStyle = '#f77f00'; g.beginPath(); g.moveTo(it.x + 20 * it.s, it.y - 13 * it.s); g.lineTo(it.x + 28 * it.s, it.y - 10 * it.s); g.lineTo(it.x + 20 * it.s, it.y - 8 * it.s); g.fill();
+        g.fillStyle = '#000'; g.beginPath(); g.arc(it.x + 15 * it.s, it.y - 14 * it.s, 1.6 * it.s, 0, 7); g.fill();
+      },
+      pond(g, it) {
+        g.fillStyle = '#4ea8de';
+        g.beginPath(); g.ellipse(it.x, it.y, 70 * it.s, 22 * it.s, 0, 0, 7); g.fill();
+        g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 2;
+        g.beginPath(); g.ellipse(it.x - 15, it.y - 4, 18 * it.s, 4 * it.s, 0, 0, Math.PI); g.stroke();
+      },
+      star(g, it) {
+        g.fillStyle = it.color;
+        g.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const r = (i % 2 ? 6 : 14) * it.s, a = i / 10 * Math.PI * 2 - Math.PI / 2;
+          g.lineTo(it.x + Math.cos(a) * r, it.y + Math.sin(a) * r);
+        }
+        g.fill();
+      },
+    };
+    // Center and size of each thing (used for tapping and spacing)
+    function bounds(it) {
+      const s = it.s;
+      switch (it.type) {
+        case 'sun': return { x: it.x, y: it.y, r: 46 * s };
+        case 'cloud': return { x: it.x, y: it.y + 2 * s, r: 44 * s };
+        case 'tree': return { x: it.x, y: it.y - 55 * s, r: 52 * s };
+        case 'house': return { x: it.x, y: it.y - 55 * s, r: 64 * s };
+        case 'flower': return { x: it.x, y: it.y - 22 * s, r: 18 * s };
+        case 'mushroom': return { x: it.x, y: it.y - 14 * s, r: 18 * s };
+        case 'bird': return { x: it.x, y: it.y - 5 * s, r: 16 * s };
+        case 'balloon': return { x: it.x, y: it.y + 12 * s, r: 26 * s };
+        case 'butterfly': return { x: it.x, y: it.y, r: 16 * s };
+        case 'rock': return { x: it.x, y: it.y - 7 * s, r: 24 * s };
+        case 'kite': return { x: it.x, y: it.y, r: 26 * s };
+        case 'duck': return { x: it.x + 5 * s, y: it.y - 4 * s, r: 22 * s };
+        case 'pond': return { x: it.x, y: it.y, r: 60 * s };
+        case 'star': return { x: it.x, y: it.y, r: 15 * s };
+      }
+    }
+
+    // ---------- Build a picture ----------
+    function makeScene(seed) {
+      const R = rng(seed);
+      const pick = a => a[Math.floor(R() * a.length)];
+      const items = [];
+      const night = R() < 0.2;
+      const scene = { night, sky: night ? ['#1d2b53', '#4b5d9b'] : pick([['#74c0fc', '#d0ebff'], ['#89c2d9', '#e9f5db'], ['#a0c4ff', '#ffd6a5']]), grass: pick(['#80b918', '#70a33a', '#95d5b2']), items };
+      const free = (b, pad) => items.every(o => {
+        const ob = bounds(o);
+        return Math.hypot(ob.x - b.x, ob.y - b.y) > ob.r + b.r + (pad || 0);
+      });
+      function place(type, opts, tries, xr, yr, pad) {
+        for (let t = 0; t < (tries || 60); t++) {
+          const it = Object.assign({ type, x: xr[0] + R() * (xr[1] - xr[0]), y: yr[0] + R() * (yr[1] - yr[0]), s: 1 }, opts());
+          const b = bounds(it);
+          if (b.x - b.r < -5 || b.x + b.r > W + 5) continue;
+          if (free(b, pad == null ? 4 : pad)) { items.push(it); return it; }
+        }
+        return null;
+      }
+      place('sun', () => ({ color: night ? '#f1f3f5' : '#ffd23f', rays: night ? 0 : 10, s: 0.9 }), 30, [60, 540], [55, 80]);
+      for (let i = 0; i < 2 + Math.floor(R() * 2); i++) place('cloud', () => ({ color: night ? '#adb5bd' : '#ffffff', s: 0.8 + R() * 0.4 }), 40, [50, 550], [50, 140]);
+      place('house', () => ({ color: pick(['#f4a261', '#e9c46a', '#e76f51', '#a8dadc', '#ffffff']), roof: pick(['#9d0208', '#264653', '#6d4c41', '#3a5a40']), door: pick(['#6d4c41', '#3a86ff', '#e63946']), window2: true, chimney: R() < 0.6, s: 0.95 }), 60, [90, 510], [GROUND + 40, GROUND + 70]);
+      if (R() < 0.6) place('pond', () => ({ s: 0.9 }), 40, [90, 510], [GROUND + 90, GROUND + 125]);
+      for (let i = 0; i < 2 + Math.floor(R() * 2); i++) place('tree', () => ({ color: pick(['#2d6a4f', '#40916c', '#52b788']), apples: R() < 0.5, s: 0.8 + R() * 0.3 }), 60, [40, 560], [GROUND + 20, GROUND + 60]);
+      for (let i = 0; i < 2; i++) place('bird', () => ({ color: night ? '#dee2e6' : '#343a40', s: 1 }), 40, [40, 560], [40, 190]);
+      if (R() < 0.7) place(R() < 0.5 ? 'balloon' : 'kite', () => ({ color: pick(PALETTE.slice(0, 7)), s: 1 }), 40, [40, 560], [60, 170]);
+      if (night) for (let i = 0; i < 4; i++) place('star', () => ({ color: '#ffd23f', s: 0.8 }), 30, [20, 580], [20, 200], 2);
+      for (let i = 0; i < 5 + Math.floor(R() * 3); i++) place('flower', () => ({ color: pick(PALETTE.slice(0, 7)), s: 1 }), 40, [20, 580], [GROUND + 40, H - 10], 2);
+      for (let i = 0; i < 1 + Math.floor(R() * 2); i++) place('mushroom', () => ({ color: pick(['#e63946', '#f4a261', '#8338ec']), spots: R() < 0.6, s: 1 }), 40, [20, 580], [GROUND + 50, H - 10], 2);
+      for (let i = 0; i < 1 + Math.floor(R() * 2); i++) place('rock', () => ({ color: pick(['#adb5bd', '#868e96', '#a68a64']), s: 0.9 + R() * 0.3 }), 40, [20, 580], [GROUND + 45, H - 8], 2);
+      for (let i = 0; i < 1 + Math.floor(R() * 2); i++) place('butterfly', () => ({ color: pick(PALETTE.slice(0, 7)), s: 1 }), 40, [30, 570], [GROUND - 30, GROUND + 80], 2);
+      const pond = items.find(i => i.type === 'pond');
+      if (pond) items.push({ type: 'duck', x: pond.x + (R() - 0.5) * 50, y: pond.y - 2, s: 0.9, color: pick(['#ffd23f', '#ffffff', '#c9a227']) });
+      // draw order: sky things, then by ground position
+      const order = { sun: 0, star: 0, cloud: 1, bird: 2, kite: 2, balloon: 2, pond: 3 };
+      items.sort((a, b) => (order[a.type] ?? 4) - (order[b.type] ?? 4) || (order[a.type] != null ? 0 : a.y - b.y));
+      return scene;
+    }
+
+    function otherColor(R, c, list) {
+      const opts = list.filter(x => x !== c);
+      return opts[Math.floor(R() * opts.length)];
+    }
+
+    // Make the changed copy and the list of differences
+    function makeDifferences(scene, count, seed) {
+      const R = rng(seed * 7 + 3);
+      const copy = JSON.parse(JSON.stringify(scene));
+      const diffs = [];
+      const candidates = copy.items.map((it, i) => i).filter(i => !['pond'].includes(copy.items[i].type));
+      for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]]; }
+      const farEnough = b => diffs.every(d => Math.hypot(d.x - b.x, d.y - b.y) > d.r + b.r + 6);
+
+      for (const idx of candidates) {
+        if (diffs.length >= count) break;
+        const it = copy.items[idx];
+        const b = bounds(it);
+        if (!farEnough(b)) continue;
+        // pick a change that makes sense for this thing
+        const kinds = [];
+        if (it.color && it.type !== 'sun' && it.type !== 'cloud') kinds.push('color');
+        if (!['house', 'sun'].includes(it.type) && !(it.type === 'duck')) kinds.push('remove');
+        if (['flower', 'mushroom', 'rock', 'butterfly', 'tree', 'balloon', 'bird'].includes(it.type)) kinds.push('size');
+        if (it.type === 'tree') kinds.push('apples');
+        if (it.type === 'mushroom') kinds.push('spots');
+        if (it.type === 'house') kinds.push('door', 'roof', 'chimney', 'window');
+        if (it.type === 'sun' && it.rays) kinds.push('rays');
+        if (!kinds.length) continue;
+        const kind = kinds[Math.floor(R() * kinds.length)];
+        let region = { x: b.x, y: b.y, r: Math.max(24, b.r) };
+        if (kind === 'color') it.color = otherColor(R, it.color, it.type === 'tree' ? ['#2d6a4f', '#ffb703', '#e85d04', '#9d4edd'] : PALETTE);
+        else if (kind === 'remove') it.removed = true;
+        else if (kind === 'size') { it.s *= 1.45; region.r = Math.max(24, bounds(it).r); region.x = bounds(it).x; region.y = bounds(it).y; }
+        else if (kind === 'apples') it.apples = !it.apples;
+        else if (kind === 'spots') it.spots = !it.spots;
+        else if (kind === 'rays') it.rays = 6;
+        else if (kind === 'door') { it.door = otherColor(R, it.door, ['#6d4c41', '#3a86ff', '#e63946', '#2a9d8f']); region = { x: it.x, y: it.y - 19 * it.s, r: 26 }; }
+        else if (kind === 'roof') { it.roof = otherColor(R, it.roof, ['#9d0208', '#264653', '#6d4c41', '#3a5a40', '#3a86ff']); region = { x: it.x, y: it.y - 92 * it.s, r: 40 }; }
+        else if (kind === 'chimney') { it.chimney = !it.chimney; region = { x: it.x + 32 * it.s, y: it.y - 97 * it.s, r: 24 }; }
+        else if (kind === 'window') { it.window2 = false; region = { x: it.x + 30 * it.s, y: it.y - 49 * it.s, r: 24 }; }
+        if (!farEnough(region)) continue;
+        diffs.push(region);
+      }
+      // Fill any missing spots by adding something new
+      let tries = 0;
+      while (diffs.length < count && tries++ < 200) {
+        const type = ['flower', 'mushroom', 'star', 'butterfly', 'bird'][Math.floor(R() * 5)];
+        const sky = type === 'star' || type === 'bird';
+        const it = { type, x: 30 + R() * 540, y: sky ? 40 + R() * 150 : GROUND + 50 + R() * 100, s: 1, color: PALETTE[Math.floor(R() * 7)], spots: true };
+        if (type === 'bird') it.color = scene.night ? '#dee2e6' : '#343a40';
+        const b = bounds(it);
+        const clear = copy.items.every(o => { const ob = bounds(o); return o.type === 'pond' ? false : Math.hypot(ob.x - b.x, ob.y - b.y) > ob.r + b.r; })
+          && !(copy.items.some(o => o.type === 'pond' && Math.hypot(bounds(o).x - b.x, (bounds(o).y - b.y) * 2.5) < 80));
+        if (!clear || !farEnough(b)) continue;
+        it.added = true;
+        copy.items.push(it);
+        diffs.push({ x: b.x, y: b.y, r: Math.max(24, b.r) });
+      }
+      return { copy, diffs };
+    }
+
+    function drawScene(canvas, scene, marks, flash) {
+      const g = canvas.getContext('2d');
+      const sky = g.createLinearGradient(0, 0, 0, GROUND);
+      sky.addColorStop(0, scene.sky[0]); sky.addColorStop(1, scene.sky[1]);
+      g.fillStyle = sky; g.fillRect(0, 0, W, GROUND);
+      g.fillStyle = scene.grass; g.fillRect(0, GROUND, W, H - GROUND);
+      g.fillStyle = 'rgba(0,0,0,0.06)';
+      g.beginPath(); g.ellipse(W / 2, GROUND + 4, W * 0.7, 10, 0, 0, 7); g.fill();
+      for (const it of scene.items) {
+        if (it.removed) continue;
+        g.save(); DRAW[it.type](g, it); g.restore();
+      }
+      // circles around the ones you found
+      for (const m of marks) {
+        g.lineWidth = 4; g.strokeStyle = '#ff006e';
+        g.beginPath(); g.arc(m.x, m.y, m.r + 6, 0, 7); g.stroke();
+        g.lineWidth = 2; g.strokeStyle = '#ffffff';
+        g.beginPath(); g.arc(m.x, m.y, m.r + 10, 0, 7); g.stroke();
+      }
+      if (flash) {
+        g.lineWidth = 5; g.strokeStyle = flash.color;
+        g.setLineDash([8, 6]);
+        g.beginPath(); g.arc(flash.x, flash.y, flash.r, 0, 7); g.stroke();
+        g.setLineDash([]);
+        if (flash.text) {
+          g.font = 'bold 34px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+          g.lineWidth = 5; g.strokeStyle = '#fff'; g.strokeText(flash.text, flash.x, flash.y);
+          g.fillStyle = flash.color; g.fillText(flash.text, flash.x, flash.y);
+        }
+      }
+    }
+
+    // ---------- Game ----------
+    const c1 = document.getElementById('c1'), c2 = document.getElementById('c2');
+    const $ = id => document.getElementById(id);
+    let level = 1, game, clock, flashT;
+    try { level = Math.max(1, parseInt(localStorage.getItem('spot-level')) || 1); } catch (e) {}
+
+    function newGame() {
+      const count = Math.min(8, 5 + Math.floor((level - 1) / 2));
+      const seed = Math.floor(Math.random() * 1e9);
+      const scene = makeScene(seed);
+      const { copy, diffs } = makeDifferences(scene, count, seed);
+      game = { scene, copy, diffs, found: new Array(diffs.length).fill(false), start: performance.now(), hints: 3, done: false, penalty: 0 };
+      $('lvl').textContent = level;
+      $('total').textContent = diffs.length;
+      $('msg').classList.add('hidden');
+      redraw();
+      updateBar();
+      clearInterval(clock);
+      clock = setInterval(updateBar, 250);
+    }
+
+    function marks() { return game.diffs.filter((d, i) => game.found[i]); }
+    function redraw(flash) {
+      drawScene(c1, game.scene, marks(), flash);
+      drawScene(c2, game.copy, marks(), flash);
+    }
+    function seconds() { return Math.floor((performance.now() - game.start) / 1000 + game.penalty); }
+    function updateBar() {
+      const n = game.found.filter(Boolean).length;
+      $('found').textContent = n;
+      $('dots').innerHTML = game.found.map(f => `<span class="dot ${f ? 'on' : ''}"></span>`).join('');
+      $('hints').textContent = game.hints;
+      $('hintBtn').disabled = game.hints <= 0 || game.done;
+      if (!game.done) $('time').textContent = seconds();
+    }
+
+    function tap(e, canvas) {
+      if (!game || game.done) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * W / rect.width;
+      const y = (e.clientY - rect.top) * H / rect.height;
+      // be a little forgiving with fingers
+      const extra = e.pointerType === 'touch' ? 14 : 6;
+      let hit = -1;
+      game.diffs.forEach((d, i) => {
+        if (!game.found[i] && Math.hypot(d.x - x, d.y - y) <= d.r + extra) hit = i;
+      });
+      if (game.diffs.some((d, i) => game.found[i] && Math.hypot(d.x - x, d.y - y) <= d.r + extra) && hit < 0) return;
+      clearTimeout(flashT);
+      if (hit >= 0) {
+        game.found[hit] = true;
+        beep(880, 0.12); setTimeout(() => beep(1320, 0.12), 90);
+        redraw();
+        updateBar();
+        if (game.found.every(Boolean)) win();
+      } else {
+        game.penalty += 3;
+        beep(180, 0.2);
+        redraw({ x, y, r: 18, color: '#e63946', text: '✕' });
+        flashT = setTimeout(() => redraw(), 450);
+        updateBar();
+      }
+    }
+    c1.addEventListener('pointerdown', e => tap(e, c1));
+    c2.addEventListener('pointerdown', e => tap(e, c2));
+
+    $('hintBtn').onclick = () => {
+      if (game.hints <= 0 || game.done) return;
+      const i = game.found.findIndex(f => !f);
+      if (i < 0) return;
+      game.hints--;
+      game.penalty += 10;
+      const d = game.diffs[i];
+      let n = 0;
+      clearTimeout(flashT);
+      const blink = () => {
+        redraw(n % 2 === 0 ? { x: d.x, y: d.y, r: d.r + 14, color: '#ffd23f' } : null);
+        if (++n < 6) flashT = setTimeout(blink, 220);
+      };
+      blink();
+      updateBar();
+    };
+    $('newBtn').onclick = newGame;
+
+    function win() {
+      game.done = true;
+      clearInterval(clock);
+      const t = seconds();
+      const par = game.diffs.length * 12;
+      const stars = t <= par ? 3 : t <= par * 2 ? 2 : 1;
+      $('msgTitle').textContent = '🎉 You found them all!';
+      $('msgStars').textContent = '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
+      $('msgText').textContent = `Level ${level} done in ${t} seconds.`;
+      level++;
+      try { localStorage.setItem('spot-level', level); } catch (e) {}
+      setTimeout(() => $('msg').classList.remove('hidden'), 400);
+    }
+    $('nextBtn').onclick = newGame;
+
+    let audio;
+    function beep(f, d) {
+      try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.frequency.value = f; o.type = 'sine';
+        g.gain.setValueAtTime(0.08, audio.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + d);
+        o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + d);
+      } catch (e) {}
+    }
+
+    newGame();
+    window.__spot = { get game() { return game; } };
+  })();
+  </script>
+</body>
+</html>

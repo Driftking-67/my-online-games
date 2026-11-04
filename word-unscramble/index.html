@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Word Unscramble – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    h1 { margin: 0 0 4px; text-align: center; }
+    .sub { color: var(--muted); margin: 0 0 12px; text-align: center; }
+    .card {
+      width: min(100%, 620px);
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 18px 14px; box-shadow: 0 6px 20px var(--shadow);
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+    }
+    .top { display: flex; justify-content: space-between; width: 100%; gap: 8px; flex-wrap: wrap; font-weight: 700; }
+    .top .muted { color: var(--muted); font-weight: 600; }
+    .progress { width: 100%; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+    .progress div { height: 100%; background: var(--accent); transition: width 0.3s; }
+    .slots, .tiles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; min-height: 58px; }
+    .slot, .tile {
+      width: clamp(40px, 11vw, 56px); height: clamp(48px, 13vw, 62px);
+      border-radius: 10px; font-size: clamp(1.4rem, 6vw, 2rem); font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      text-transform: uppercase; user-select: none; -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+    .slot { border: 2px dashed var(--border); background: var(--bg); color: var(--text); padding: 0; }
+    .slot.filled { border-style: solid; border-color: var(--accent); }
+    .slot.hinted { border-color: #f5b700; background: rgba(255, 210, 63, 0.18); }
+    .tile {
+      border: none; color: #3a2a00; padding: 0;
+      background: linear-gradient(#ffe8a3, #f6c945);
+      box-shadow: 0 4px 0 #c99a12;
+    }
+    .tile:hover { background: linear-gradient(#fff0bf, #f8d465); }
+    .tile:active { transform: translateY(3px); box-shadow: 0 1px 0 #c99a12; }
+    .tile.used { visibility: hidden; }
+    .slots.good .slot { border-color: var(--success); background: rgba(95, 211, 141, 0.2); }
+    .slots.bad { animation: shake 0.4s; }
+    .slots.bad .slot { border-color: var(--danger); }
+    @keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-8px); } 40%,80% { transform: translateX(8px); } }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .clue { color: var(--muted); font-size: 0.95rem; min-height: 1.3em; text-align: center; }
+    .feedback { min-height: 1.4em; font-weight: 700; text-align: center; }
+    .feedback.good { color: var(--success); }
+    .feedback.bad { color: var(--danger); }
+    .done-box { text-align: center; }
+    .done-box .big { font-size: 2.6rem; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>🔤 Word Unscramble</h1>
+    <p class="sub">Tap the letters in the right order to make a word.</p>
+
+    <div class="card" id="play">
+      <div class="top">
+        <span>Level <span id="lvl">1</span> <span class="muted">· Word <span id="wnum">1</span>/5</span></span>
+        <span>⭐ <span id="score">0</span> <span class="muted">· 🔥 <span id="streak">0</span></span></span>
+      </div>
+      <div class="progress"><div id="bar" style="width:0%"></div></div>
+      <div class="clue" id="clue"></div>
+      <div class="slots" id="slots"></div>
+      <div class="feedback" id="fb"></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="actions">
+        <button id="shuffleBtn">🔀 Shuffle</button>
+        <button id="clearBtn">⌫ Clear</button>
+        <button id="hintBtn">💡 Hint</button>
+        <button id="skipBtn">⏭ Skip</button>
+      </div>
+    </div>
+
+    <div class="card hidden" id="levelDone">
+      <div class="done-box">
+        <div class="big">🎉</div>
+        <h2 id="ldTitle" style="margin:6px 0"></h2>
+        <p id="ldText" style="color:var(--muted)"></p>
+        <button id="nextLevel" class="primary">Next level ▶</button>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script>
+  (function () {
+    // Words grouped by length. Each has a small clue.
+    const WORDS = {
+      3: [['cat','A pet that purrs'],['dog','A pet that barks'],['sun','It shines in the day'],['hat','You wear it on your head'],['bus','A big vehicle for lots of people'],['cup','You drink from it'],['pig','A farm animal that oinks'],['bed','You sleep in it'],['egg','A chicken lays it'],['map','It shows you where to go'],['owl','A bird awake at night'],['ant','A tiny bug that lives in a hill'],['bat','Used in baseball'],['jam','Spread it on toast'],['fox','A clever orange animal'],['net','Used to catch fish'],['zoo','Where you see lots of animals'],['ice','Frozen water'],['toy','Something to play with'],['pen','You write with it']],
+      4: [['fish','It swims in water'],['frog','A green animal that hops'],['cake','A birthday treat'],['ball','You kick or throw it'],['tree','It has leaves and branches'],['moon','It shines at night'],['star','It twinkles in the sky'],['book','You read it'],['bike','It has two wheels and pedals'],['rain','Water falling from clouds'],['snow','Cold white flakes'],['duck','It quacks'],['lion','King of the jungle'],['boat','It floats on water'],['milk','A white drink from cows'],['ship','A very big boat'],['king','He wears a crown'],['shoe','You wear it on your foot'],['bird','It has feathers and flies'],['lamp','It gives light in a room'],['game','Something fun you play'],['corn','A yellow vegetable on a cob'],['wolf','A wild animal that howls'],['nest','A bird\'s home']],
+      5: [['apple','A red or green fruit'],['horse','You can ride this animal'],['plant','It grows in soil'],['chair','You sit on it'],['house','A place where people live'],['train','It runs on tracks'],['tiger','A big striped cat'],['pizza','A cheesy food in slices'],['robot','A machine that can move'],['beach','Sand by the ocean'],['cloud','Fluffy and white in the sky'],['snake','It slithers'],['bread','Used to make a sandwich'],['money','You buy things with it'],['shark','A fish with big teeth'],['whale','The biggest animal in the sea'],['ghost','A spooky see-through thing'],['candy','A sweet treat'],['juice','A drink made from fruit'],['paint','Used to color a picture'],['music','You listen to it'],['zebra','A striped horse-like animal'],['crown','A king wears it'],['sword','A knight\'s weapon']],
+      6: [['rocket','It flies to space'],['planet','Earth is one'],['monkey','It swings in trees'],['garden','Where flowers grow'],['dragon','A fire-breathing creature'],['pirate','A sailor who hunts treasure'],['castle','A big stone home for a king'],['banana','A long yellow fruit'],['soccer','A sport with a goal and a ball'],['turtle','It carries its shell'],['school','Where you learn'],['bridge','It goes over a river'],['cookie','A sweet baked treat'],['jungle','A thick, wild forest'],['winter','The coldest season'],['spider','It has eight legs'],['rabbit','It hops and has long ears'],['helmet','Protects your head'],['bubble','Round and floats, then pops'],['parrot','A bird that can talk'],['camera','It takes pictures']],
+      7: [['dolphin','A smart sea animal'],['penguin','A bird that can\'t fly but swims'],['monster','A scary creature'],['popcorn','A movie snack'],['rainbow','Colors in the sky after rain'],['pancake','A flat breakfast food'],['volcano','A mountain that erupts'],['library','A building full of books'],['blanket','It keeps you warm in bed'],['diamond','A sparkly gem'],['kitchen','Where food is cooked'],['dinosaur','A huge animal from long ago'],['giraffe','The tallest animal'],['treasure','Gold hidden in a chest'],['unicorn','A horse with one horn'],['airport','Where planes take off'],['chicken','It lays eggs'],['octopus','It has eight arms'],['sandwich','Food between two slices of bread'],['vampire','A spooky creature with fangs']],
+    };
+    // Any real word made from the same letters is also correct
+    const ALL = new Set(Object.values(WORDS).flat().map(w => w[0]));
+    const EXTRA = ['act','god','pots','tops','spot','post','stop','opts','evil','live','vile','veil','lemon','melon','night','thing','heart','earth','hater','tiger','tea','eat','ate','ear','are','era','arm','ram','mar','rat','art','tar','nap','pan','tip','pit','won','own','now','tab','was','saw','part','trap','rapt','tarp','sale','seal','lose','sole','loop','pool','polo','team','meat','mate','tame','acre','race','care','note','tone','sword','words','horse','shore','plant','canter','trance','recant','nectar','listen','silent','enlist','inlets','tinsel','dusty','study','fringe','finger','danger','garden','ranged','gander','ocean','canoe','races','scare','acres','cares','below','elbow','bowel','night','thing','reaction','creation','cratered'];
+    EXTRA.forEach(w => ALL.add(w));
+
+    const sortWord = w => w.split('').sort().join('');
+    const $ = id => document.getElementById(id);
+
+    let state = { level: 1, score: 0, streak: 0 };
+    try { state = Object.assign(state, JSON.parse(localStorage.getItem('unscramble-save')) || {}); } catch (e) {}
+    const save = () => { try { localStorage.setItem('unscramble-save', JSON.stringify(state)); } catch (e) {} };
+
+    function lengthForLevel(l) { return l <= 2 ? 3 + (l === 2 ? 1 : 0) : l <= 4 ? 4 + (l === 4 ? 1 : 0) : l <= 6 ? 5 + (l === 6 ? 1 : 0) : l <= 8 ? 6 : 7; }
+    function poolFor(l) {
+      const n = lengthForLevel(l);
+      // mix in some shorter words on early levels, and 7-8 letter words later
+      const list = WORDS[n] || WORDS[7];
+      return list.slice();
+    }
+
+    let round = null;
+
+    function startLevel() {
+      const pool = poolFor(state.level);
+      for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+      round = { words: pool.slice(0, 5), idx: 0, points: 0, solved: 0 };
+      $('play').classList.remove('hidden');
+      $('levelDone').classList.add('hidden');
+      startWord();
+    }
+
+    let word, clue, letters, order, placed, hinted, locked;
+    function scramble(w) {
+      let s;
+      do {
+        const a = w.split('');
+        for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+        s = a.join('');
+      } while ((s === w || ALL.has(s)) && w.length > 2 && new Set(w).size > 1 && Math.random() < 0.98);
+      return s;
+    }
+    function startWord() {
+      [word, clue] = round.words[round.idx];
+      letters = scramble(word).split('').map((ch, i) => ({ ch, id: i, used: false }));
+      order = letters.map(l => l.id);
+      placed = new Array(word.length).fill(null); // tile ids
+      hinted = new Array(word.length).fill(false);
+      locked = false;
+      $('clue').textContent = '💭 ' + clue;
+      $('fb').textContent = ''; $('fb').className = 'feedback';
+      render();
+    }
+
+    function render() {
+      $('lvl').textContent = state.level;
+      $('wnum').textContent = round.idx + 1;
+      $('score').textContent = state.score;
+      $('streak').textContent = state.streak;
+      $('bar').style.width = (round.idx / round.words.length * 100) + '%';
+      const slots = $('slots');
+      slots.className = 'slots';
+      slots.innerHTML = '';
+      placed.forEach((id, i) => {
+        const b = document.createElement('button');
+        b.className = 'slot' + (id != null ? ' filled' : '') + (hinted[i] ? ' hinted' : '');
+        b.textContent = id != null ? letters[id].ch : '';
+        b.setAttribute('aria-label', id != null ? `Remove ${letters[id].ch}` : 'Empty');
+        b.onclick = () => { if (!locked && id != null && !hinted[i]) { letters[id].used = false; placed[i] = null; render(); } };
+        slots.appendChild(b);
+      });
+      const tiles = $('tiles');
+      tiles.innerHTML = '';
+      order.map(id => letters[id]).forEach(l => {
+        const b = document.createElement('button');
+        b.className = 'tile' + (l.used ? ' used' : '');
+        b.textContent = l.ch;
+        b.setAttribute('aria-label', 'Letter ' + l.ch);
+        b.onclick = () => addLetter(l.id);
+        tiles.appendChild(b);
+      });
+    }
+
+    function addLetter(id) {
+      if (locked || letters[id].used) return;
+      const i = placed.indexOf(null);
+      if (i < 0) return;
+      letters[id].used = true;
+      placed[i] = id;
+      render();
+      if (placed.indexOf(null) < 0) check();
+    }
+
+    function check() {
+      const guess = placed.map(id => letters[id].ch).join('');
+      if (guess === word || (ALL.has(guess) && sortWord(guess) === sortWord(word))) {
+        locked = true;
+        const hintsUsed = hinted.filter(Boolean).length;
+        const pts = Math.max(1, word.length * 10 - hintsUsed * 8) + state.streak * 2;
+        state.score += pts; state.streak++;
+        round.solved++;
+        save();
+        $('slots').classList.add('good');
+        $('fb').textContent = (guess === word ? '✅ Correct! ' : `✅ "${guess.toUpperCase()}" works too! `) + `+${pts}`;
+        $('fb').className = 'feedback good';
+        beep(660, 0.1); setTimeout(() => beep(990, 0.15), 100);
+        setTimeout(nextWord, 1100);
+      } else {
+        $('slots').classList.add('bad');
+        $('fb').textContent = 'Not quite. Try again!';
+        $('fb').className = 'feedback bad';
+        beep(180, 0.2);
+        setTimeout(() => $('slots').classList.remove('bad'), 450);
+      }
+    }
+
+    function nextWord() {
+      round.idx++;
+      if (round.idx >= round.words.length) return levelDone();
+      startWord();
+    }
+
+    function levelDone() {
+      $('bar').style.width = '100%';
+      $('play').classList.add('hidden');
+      $('levelDone').classList.remove('hidden');
+      $('ldTitle').textContent = `Level ${state.level} complete!`;
+      $('ldText').textContent = `You solved ${round.solved} of ${round.words.length} words. Score: ${state.score} ⭐`;
+      state.level++;
+      save();
+    }
+    $('nextLevel').onclick = startLevel;
+
+    $('shuffleBtn').onclick = () => {
+      if (locked) return;
+      for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+      render();
+    };
+    $('clearBtn').onclick = () => {
+      if (locked) return;
+      placed.forEach((id, i) => { if (id != null && !hinted[i]) { letters[id].used = false; placed[i] = null; } });
+      render();
+    };
+    $('hintBtn').onclick = () => {
+      if (locked) return;
+      // Find first slot that isn't the right letter, and put the right one there
+      for (let i = 0; i < word.length; i++) {
+        const cur = placed[i] != null ? letters[placed[i]].ch : null;
+        if (cur === word[i] && hinted[i]) continue;
+        if (cur === word[i]) { hinted[i] = true; continue; }
+        // clear the slot
+        if (placed[i] != null) { letters[placed[i]].used = false; placed[i] = null; }
+        // find an unused tile with that letter (or take it from another slot)
+        let t = letters.find(l => !l.used && l.ch === word[i]);
+        if (!t) {
+          const j = placed.findIndex((id, k) => id != null && !hinted[k] && letters[id].ch === word[i]);
+          t = letters[placed[j]];
+          placed[j] = null;
+        }
+        t.used = true; placed[i] = t.id; hinted[i] = true;
+        state.streak = 0;
+        render();
+        if (placed.indexOf(null) < 0) check();
+        return;
+      }
+    };
+    $('skipBtn').onclick = () => {
+      if (locked) return;
+      locked = true;
+      state.streak = 0; save();
+      $('fb').textContent = `The word was "${word.toUpperCase()}"`;
+      $('fb').className = 'feedback';
+      setTimeout(nextWord, 1500);
+    };
+
+    // Typing on a keyboard works too
+    addEventListener('keydown', (e) => {
+      if ($('play').classList.contains('hidden') || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Backspace') {
+        const i = placed.map((id, k) => id != null && !hinted[k] ? k : -1).filter(k => k >= 0).pop();
+        if (i != null && !locked) { letters[placed[i]].used = false; placed[i] = null; render(); }
+        e.preventDefault();
+        return;
+      }
+      if (/^[a-zA-Z]$/.test(e.key)) {
+        const t = letters.find(l => !l.used && l.ch === e.key.toLowerCase());
+        if (t) addLetter(t.id);
+      }
+    });
+
+    let audio;
+    function beep(f, d) {
+      try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.07, audio.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + d);
+        o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + d);
+      } catch (e) {}
+    }
+
+    startLevel();
+  })();
+  </script>
+</body>
+</html>

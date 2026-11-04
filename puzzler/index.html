@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Puzzler – My Online Games</title>
+  <script src="../assets/theme.js"></script>
+  <link rel="stylesheet" href="../assets/site.css">
+  <style>
+    h1 { margin: 0 0 4px; text-align: center; }
+    .sub { color: var(--muted); margin: 0 0 10px; text-align: center; }
+    .hidden { display: none !important; }
+    .wrap { width: min(100%, 760px); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    .pill { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-weight: 700; }
+    #hint { color: var(--muted); text-align: center; min-height: 1.4em; max-width: 620px; }
+    .stage { position: relative; width: 100%; display: flex; justify-content: center; }
+    canvas#room {
+      display: block; max-width: 100%; height: auto;
+      border-radius: 12px; box-shadow: 0 8px 24px var(--shadow);
+      touch-action: none; image-rendering: auto;
+    }
+    .pad {
+      display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 6px;
+      justify-content: center;
+    }
+    .pad button {
+      font-size: 1.6rem; padding: 0; border-radius: 14px;
+      touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    }
+    .pad .u { grid-column: 2; grid-row: 1; }
+    .pad .l { grid-column: 1; grid-row: 2; }
+    .pad .r { grid-column: 3; grid-row: 2; }
+    .pad .d { grid-column: 2; grid-row: 3; }
+    .pad .c { grid-column: 2; grid-row: 2; font-size: 1.1rem; }
+    .controls { display: flex; gap: 18px; align-items: center; justify-content: center; flex-wrap: wrap; }
+    .side-btns { display: flex; flex-direction: column; gap: 8px; }
+    .keys-tip { color: var(--muted); font-size: 0.85rem; text-align: center; }
+    @media (pointer: coarse) { .keys-tip { display: none; } }
+    .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; width: 100%; }
+    .room-btn { text-align: left; padding: 10px; }
+    .room-btn b { display: block; }
+    .room-btn small { color: var(--muted); }
+    .room-btn.done { border-color: var(--success); }
+    .room-btn:disabled { opacity: 0.45; }
+    @media (max-width: 600px) {
+      .sub { display: none; }
+      .pad { grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 58px); }
+    }
+    #winBox {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(10, 10, 30, 0.45); border-radius: 12px;
+    }
+    #winBox .box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; text-align: center; box-shadow: 0 10px 30px var(--shadow); }
+    #winBox h2 { margin: 0 0 6px; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="wrap">
+      <h1>🗝️ Puzzler</h1>
+      <p class="sub">Push blocks, find keys, and reach the crystal in every room.</p>
+
+      <div id="menu" class="wrap">
+        <div class="rooms" id="rooms"></div>
+      </div>
+
+      <div id="playArea" class="wrap hidden">
+        <div class="bar">
+          <span class="pill" id="roomName"></span>
+          <span class="pill">👣 <span id="moves">0</span></span>
+          <span class="pill">🗝️ <span id="keys">0</span></span>
+        </div>
+        <div id="hint"></div>
+        <div class="stage">
+          <canvas id="room" width="480" height="320"></canvas>
+          <div id="winBox" class="hidden">
+            <div class="box">
+              <h2>💎 Room cleared!</h2>
+              <p id="winText" style="color:var(--muted);margin:0 0 12px"></p>
+              <button id="nextBtn" class="primary">Next room ▶</button>
+            </div>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="pad" aria-label="Move">
+            <button class="u" data-dir="up" aria-label="Up">▲</button>
+            <button class="l" data-dir="left" aria-label="Left">◀</button>
+            <button class="c" id="undoPad" aria-label="Undo">↶</button>
+            <button class="r" data-dir="right" aria-label="Right">▶</button>
+            <button class="d" data-dir="down" aria-label="Down">▼</button>
+          </div>
+          <div class="side-btns">
+            <button id="undoBtn">↶ Undo</button>
+            <button id="resetBtn">🔄 Restart</button>
+            <button id="menuBtn">🗺️ Rooms</button>
+          </div>
+        </div>
+        <div class="keys-tip">Arrow keys or WASD to move · <b>Z</b> to undo · <b>R</b> to restart · You can also swipe on the room</div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="../assets/header.js"></script>
+  <script src="engine.js"></script>
+  <script>
+  (function () {
+    const { ROOMS, parse, move, tileAt, gateOpen } = window.Puzzler;
+    const $ = id => document.getElementById(id);
+    const canvas = $('room'), g = canvas.getContext('2d');
+    const T = 48;
+
+    let progress = { done: [] };
+    try { progress = Object.assign(progress, JSON.parse(localStorage.getItem('puzzler-progress')) || {}); } catch (e) {}
+    const saveProgress = () => { try { localStorage.setItem('puzzler-progress', JSON.stringify(progress)); } catch (e) {} };
+    const unlocked = i => i === 0 || progress.done.includes(i - 1) || progress.done.includes(i);
+
+    // ---------- Room menu ----------
+    function showMenu() {
+      $('menu').classList.remove('hidden');
+      $('playArea').classList.add('hidden');
+      $('rooms').innerHTML = '';
+      ROOMS.forEach((r, i) => {
+        const b = document.createElement('button');
+        const done = progress.done.includes(i);
+        b.className = 'room-btn' + (done ? ' done' : '');
+        b.disabled = !unlocked(i);
+        b.innerHTML = `<b>${done ? '💎' : unlocked(i) ? '🚪' : '🔒'} Room ${i + 1}</b><small>${unlocked(i) ? r.name : 'Locked'}</small>`;
+        b.onclick = () => startRoom(i);
+        $('rooms').appendChild(b);
+      });
+    }
+
+    // ---------- Playing ----------
+    let idx = 0, lv, st, history, anim = null, moves = 0;
+
+    function startRoom(i) {
+      idx = i;
+      lv = parse(ROOMS[i]);
+      st = lv.start;
+      history = [];
+      moves = 0;
+      canvas.width = lv.w * T; canvas.height = lv.h * T;
+      canvas.style.width = Math.min(lv.w * T, 720) + 'px';
+      $('menu').classList.add('hidden');
+      $('playArea').classList.remove('hidden');
+      $('winBox').classList.add('hidden');
+      $('roomName').textContent = `Room ${i + 1}: ${ROOMS[i].name}`;
+      $('hint').textContent = '💡 ' + ROOMS[i].hint;
+      anim = null;
+      update();
+    }
+
+    function update() {
+      $('moves').textContent = moves;
+      $('keys').textContent = st.held;
+    }
+
+    function tryMove(dir) {
+      if (!lv || st.won || $('playArea').classList.contains('hidden')) return;
+      const r = move(lv, st, dir);
+      if (!r) { bump(dir); return; }
+      history.push(st);
+      anim = { from: st.p, to: r.st.p, t: 0, dur: r.events.includes('slide') ? 0.22 : 0.1 };
+      st = r.st;
+      moves++;
+      if (r.events.includes('key')) sound('key');
+      else if (r.events.includes('unlock')) sound('unlock');
+      else if (r.events.includes('fill')) sound('fill');
+      else if (r.events.includes('push')) sound('push');
+      else if (r.events.includes('slide')) sound('slide');
+      else sound('step');
+      update();
+      if (st.won) win();
+    }
+    let bumpAnim = null;
+    function bump(dir) { bumpAnim = { dir, t: 0 }; sound('bump'); }
+
+    function undo() {
+      if (!history.length) return;
+      st = history.pop();
+      moves = Math.max(0, moves - 1);
+      anim = null;
+      $('winBox').classList.add('hidden');
+      update();
+    }
+
+    function win() {
+      sound('win');
+      if (!progress.done.includes(idx)) progress.done.push(idx);
+      saveProgress();
+      const last = idx === ROOMS.length - 1;
+      $('winText').textContent = last ? `You cleared every room! You are a master Puzzler!` : `Solved in ${moves} moves.`;
+      $('nextBtn').textContent = last ? 'Back to rooms' : 'Next room ▶';
+      setTimeout(() => $('winBox').classList.remove('hidden'), 350);
+    }
+    $('nextBtn').onclick = () => idx === ROOMS.length - 1 ? showMenu() : startRoom(idx + 1);
+
+    // ---------- Drawing ----------
+    const C = {
+      floorA: '#cbb994', floorB: '#c3b08a', wall: '#5c5470', wallTop: '#7a7192', wallEdge: '#433c55',
+      ice: '#b9e6f7', iceLine: '#ffffff', pit: '#1b1426', plate: '#9a8c6a',
+    };
+    function drawTile(x, y, t, i) {
+      const X = x * T, Y = y * T;
+      if (t === '#') {
+        g.fillStyle = C.wall; g.fillRect(X, Y, T, T);
+        g.fillStyle = C.wallTop; g.fillRect(X, Y, T, T - 10);
+        g.strokeStyle = C.wallEdge; g.lineWidth = 2;
+        g.strokeRect(X + 1, Y + 1, T - 2, T - 2);
+        g.beginPath(); g.moveTo(X, Y + T / 2 - 5); g.lineTo(X + T, Y + T / 2 - 5);
+        g.moveTo(X + T / 2, Y); g.lineTo(X + T / 2, Y + T / 2 - 5);
+        g.moveTo(X + T / 4, Y + T / 2 - 5); g.lineTo(X + T / 4, Y + T - 10);
+        g.moveTo(X + 3 * T / 4, Y + T / 2 - 5); g.lineTo(X + 3 * T / 4, Y + T - 10); g.stroke();
+        return;
+      }
+      g.fillStyle = (x + y) % 2 ? C.floorA : C.floorB;
+      g.fillRect(X, Y, T, T);
+      if (t === '*') {
+        g.fillStyle = C.ice; g.fillRect(X, Y, T, T);
+        g.strokeStyle = C.iceLine; g.lineWidth = 2; g.globalAlpha = 0.7;
+        g.beginPath(); g.moveTo(X + 8, Y + 30); g.lineTo(X + 20, Y + 18); g.moveTo(X + 24, Y + 40); g.lineTo(X + 40, Y + 24); g.stroke();
+        g.globalAlpha = 1;
+      } else if (t === 'O') {
+        g.fillStyle = C.pit;
+        g.beginPath(); g.ellipse(X + T / 2, Y + T / 2, T / 2 - 3, T / 2 - 5, 0, 0, 7); g.fill();
+        g.fillStyle = '#2d2240';
+        g.beginPath(); g.ellipse(X + T / 2, Y + T / 2 - 6, T / 2 - 8, T / 2 - 14, 0, 0, 7); g.fill();
+      } else if (t === '_') {
+        const pressed = st.p === i || st.blocks.includes(i);
+        g.fillStyle = pressed ? '#3fb36b' : '#d64545';
+        g.fillRect(X + 9, Y + 9, T - 18, T - 18);
+        g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 3; g.strokeRect(X + 9, Y + 9, T - 18, T - 18);
+      } else if (t === 'G') {
+        const open = gateOpen(lv, st.blocks, st.p);
+        if (!open) {
+          g.fillStyle = '#6b6b78'; g.fillRect(X + 2, Y + 2, T - 4, T - 4);
+          g.fillStyle = '#9a9aa8';
+          for (let k = 0; k < 4; k++) g.fillRect(X + 6 + k * 10, Y + 4, 5, T - 8);
+          g.fillStyle = '#d64545'; g.beginPath(); g.arc(X + T / 2, Y + T / 2, 6, 0, 7); g.fill();
+        } else {
+          g.fillStyle = 'rgba(80,80,90,0.35)';
+          for (let k = 0; k < 4; k++) g.fillRect(X + 6 + k * 10, Y + 2, 5, 6);
+        }
+      } else if (t === 'L') {
+        g.fillStyle = '#8b5a2b'; g.fillRect(X + 3, Y + 3, T - 6, T - 6);
+        g.strokeStyle = '#5e3b17'; g.lineWidth = 3; g.strokeRect(X + 3, Y + 3, T - 6, T - 6);
+        g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(X + T / 2, Y + T / 2 - 4, 6, 0, 7); g.fill();
+        g.fillRect(X + T / 2 - 3, Y + T / 2, 6, 10);
+      } else if (t === 'C') {
+        const s = 1 + Math.sin(performance.now() / 300) * 0.08;
+        g.save(); g.translate(X + T / 2, Y + T / 2); g.scale(s, s);
+        g.fillStyle = 'rgba(120, 220, 255, 0.35)'; g.beginPath(); g.arc(0, 0, 20, 0, 7); g.fill();
+        g.fillStyle = '#4dd2ff';
+        g.beginPath(); g.moveTo(0, -18); g.lineTo(12, -4); g.lineTo(0, 18); g.lineTo(-12, -4); g.closePath(); g.fill();
+        g.fillStyle = '#c7f3ff'; g.beginPath(); g.moveTo(0, -18); g.lineTo(5, -4); g.lineTo(0, 10); g.lineTo(-5, -4); g.closePath(); g.fill();
+        g.restore();
+      }
+    }
+
+    function drawBlock(i) {
+      const X = (i % lv.w) * T, Y = Math.floor(i / lv.w) * T;
+      g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(X + 5, Y + 8, T - 8, T - 8);
+      g.fillStyle = '#a0784a'; g.fillRect(X + 3, Y + 3, T - 6, T - 6);
+      g.fillStyle = '#c4975f'; g.fillRect(X + 3, Y + 3, T - 6, T - 14);
+      g.strokeStyle = '#6d4c2b'; g.lineWidth = 3; g.strokeRect(X + 4, Y + 4, T - 8, T - 8);
+      g.beginPath(); g.moveTo(X + 8, Y + 8); g.lineTo(X + T - 8, Y + T - 8); g.moveTo(X + T - 8, Y + 8); g.lineTo(X + 8, Y + T - 8); g.stroke();
+    }
+    function drawKey(i) {
+      const X = (i % lv.w) * T + T / 2, Y = Math.floor(i / lv.w) * T + T / 2 + Math.sin(performance.now() / 250 + i) * 2;
+      g.save(); g.translate(X, Y); g.rotate(-0.6);
+      g.fillStyle = '#ffd23f'; g.strokeStyle = '#b38600'; g.lineWidth = 2;
+      g.beginPath(); g.arc(-8, 0, 7, 0, 7); g.fill(); g.stroke();
+      g.fillRect(-2, -2, 16, 5); g.fillRect(9, 2, 3, 5); g.fillRect(4, 2, 3, 4);
+      g.fillStyle = C.floorA; g.beginPath(); g.arc(-8, 0, 3, 0, 7); g.fill();
+      g.restore();
+    }
+    // Our hero: a little explorer with a purple hood and an orange scarf
+    function drawHero(px, py, dir) {
+      const X = px + T / 2, Y = py + T / 2;
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(X, Y + 17, 13, 5, 0, 0, 7); g.fill();
+      // boots
+      g.fillStyle = '#4a3226'; g.fillRect(X - 9, Y + 9, 7, 8); g.fillRect(X + 2, Y + 9, 7, 8);
+      // cloak
+      g.fillStyle = '#6a3fb5';
+      g.beginPath(); g.moveTo(X - 13, Y + 12); g.lineTo(X - 9, Y - 6); g.lineTo(X + 9, Y - 6); g.lineTo(X + 13, Y + 12); g.closePath(); g.fill();
+      // scarf
+      g.fillStyle = '#ff8c2a'; g.fillRect(X - 9, Y - 6, 18, 5);
+      g.fillRect(X + (dir === 'left' ? 4 : -9), Y - 2, 5, 9);
+      // face + hood
+      g.fillStyle = '#6a3fb5'; g.beginPath(); g.arc(X, Y - 13, 11, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(X - 6, Y - 22); g.lineTo(X, Y - 31); g.lineTo(X + 6, Y - 22); g.fill();
+      if (dir !== 'up') {
+        g.fillStyle = '#f2c9a0'; g.beginPath(); g.arc(X + (dir === 'left' ? -2 : dir === 'right' ? 2 : 0), Y - 11, 7, 0, 7); g.fill();
+        g.fillStyle = '#222';
+        const ex = dir === 'left' ? -4 : dir === 'right' ? 4 : 0;
+        if (dir !== 'right') g.fillRect(X - 3 + ex - 1, Y - 13, 2, 3);
+        if (dir !== 'left') g.fillRect(X + 3 + ex - 1, Y - 13, 2, 3);
+      }
+    }
+
+    let lastDir = 'down', last = performance.now();
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (lv && !$('playArea').classList.contains('hidden')) {
+        g.clearRect(0, 0, canvas.width, canvas.height);
+        for (let y = 0; y < lv.h; y++) for (let x = 0; x < lv.w; x++) {
+          const i = y * lv.w + x;
+          drawTile(x, y, tileAt(lv, st, i), i);
+        }
+        st.keys.forEach(drawKey);
+        st.blocks.forEach(drawBlock);
+        // hero position (smoothly moving)
+        let fx = (st.p % lv.w) * T, fy = Math.floor(st.p / lv.w) * T;
+        if (anim) {
+          anim.t += dt;
+          const k = Math.min(1, anim.t / anim.dur);
+          const ax = (anim.from % lv.w) * T, ay = Math.floor(anim.from / lv.w) * T;
+          fx = ax + (fx - ax) * k; fy = ay + (fy - ay) * k;
+          if (k >= 1) anim = null;
+        }
+        if (bumpAnim) {
+          bumpAnim.t += dt;
+          const d = window.Puzzler.DIRS[bumpAnim.dir], k = Math.sin(Math.min(1, bumpAnim.t / 0.12) * Math.PI) * 5;
+          fx += d[0] * k; fy += d[1] * k;
+          if (bumpAnim.t > 0.12) bumpAnim = null;
+        }
+        drawHero(fx, fy, lastDir);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    // ---------- Controls ----------
+    const KEYS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+    addEventListener('keydown', e => {
+      if ($('playArea').classList.contains('hidden')) return;
+      if (KEYS[e.code]) { e.preventDefault(); lastDir = KEYS[e.code]; tryMove(KEYS[e.code]); }
+      else if (e.code === 'KeyZ' || (e.code === 'Backspace')) { e.preventDefault(); undo(); }
+      else if (e.code === 'KeyR') startRoom(idx);
+    });
+    document.querySelectorAll('[data-dir]').forEach(b => {
+      b.addEventListener('pointerdown', e => { e.preventDefault(); lastDir = b.dataset.dir; tryMove(b.dataset.dir); });
+    });
+    $('undoBtn').onclick = undo; $('undoPad').onclick = undo;
+    $('resetBtn').onclick = () => startRoom(idx);
+    $('menuBtn').onclick = showMenu;
+
+    // swipe on the room
+    let sw = null;
+    canvas.addEventListener('pointerdown', e => { sw = { x: e.clientX, y: e.clientY }; });
+    canvas.addEventListener('pointerup', e => {
+      if (!sw) return;
+      const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+      sw = null;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+      const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      lastDir = dir; tryMove(dir);
+    });
+
+    // ---------- Sounds ----------
+    let audio;
+    function tone(f, d, type, vol, slide) {
+      try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        const o = audio.createOscillator(), gn = audio.createGain();
+        o.type = type || 'square'; o.frequency.setValueAtTime(f, audio.currentTime);
+        if (slide) o.frequency.exponentialRampToValueAtTime(slide, audio.currentTime + d);
+        gn.gain.setValueAtTime(vol || 0.04, audio.currentTime);
+        gn.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + d);
+        o.connect(gn); gn.connect(audio.destination); o.start(); o.stop(audio.currentTime + d);
+      } catch (e) {}
+    }
+    function sound(k) {
+      if (k === 'step') tone(300, 0.04, 'triangle', 0.03);
+      if (k === 'bump') tone(110, 0.08, 'square', 0.03);
+      if (k === 'push') tone(160, 0.12, 'sawtooth', 0.04, 90);
+      if (k === 'slide') tone(900, 0.2, 'sine', 0.03, 400);
+      if (k === 'fill') tone(220, 0.35, 'triangle', 0.06, 60);
+      if (k === 'key') { tone(880, 0.1, 'square', 0.04); setTimeout(() => tone(1320, 0.15, 'square', 0.04), 90); }
+      if (k === 'unlock') tone(500, 0.2, 'triangle', 0.05, 900);
+      if (k === 'win') [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'triangle', 0.06), i * 110));
+    }
+
+    // Start in the first room you haven't beaten yet
+    const firstOpen = ROOMS.findIndex((r, i) => !progress.done.includes(i));
+    if (progress.done.length) showMenu(); else startRoom(0);
+    if (firstOpen < 0) showMenu();
+    requestAnimationFrame(frame);
+    window.__pz = { tryMove, get st() { return st; }, startRoom };
+  })();
+  </script>
+</body>
+</html>
