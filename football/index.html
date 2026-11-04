@@ -20,6 +20,8 @@
     .teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 340px; overflow-y: auto; padding: 2px; }
     .team-btn { display: flex; align-items: center; gap: 8px; text-align: left; padding: 7px 9px; font-size: 0.9rem; }
     .team-btn .chip { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid; }
+    .team-btn .chip.dice { border: none; font-size: 1.1rem; line-height: 22px; text-align: center; }
+    .team-btn:disabled { opacity: 0.35; }
     .team-btn.active { outline: 3px solid var(--accent); outline-offset: 1px; background: var(--surface-2); color: var(--text); border-color: var(--border); }
     select { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); max-width: 100%; }
     #kickoff { font-size: 1.2rem; padding: 12px 30px; margin-top: 14px; }
@@ -83,9 +85,7 @@
         <div class="label" id="teamLabel">Pick your team</div>
         <div class="teams" id="teamGrid"></div>
         <div class="label" id="oppLabel">Opponent</div>
-        <div class="row" style="justify-content:flex-start">
-          <select id="oppSelect"></select>
-        </div>
+        <div class="teams" id="oppGrid"></div>
         <div id="diffBox">
         <div class="label">Difficulty</div>
         <div class="row" style="justify-content:flex-start">
@@ -210,7 +210,8 @@
 
     function renderSetup() {
       const teams = LEAGUES[prefs.league];
-      if (!teams.find(t => t.abbr === prefs.team)) prefs.team = teams[0].abbr;
+      if (prefs.team !== 'random' && !teams.find(t => t.abbr === prefs.team)) prefs.team = 'random';
+      if (prefs.opp !== 'random' && (!teams.find(t => t.abbr === prefs.opp) || prefs.opp === prefs.team)) prefs.opp = 'random';
       document.querySelectorAll('[data-league]').forEach(b => b.classList.toggle('active', b.dataset.league === prefs.league));
       document.querySelectorAll('[data-diff]').forEach(b => b.classList.toggle('active', b.dataset.diff === prefs.diff));
       const two = prefs.mode === '2p';
@@ -218,22 +219,28 @@
       $('teamLabel').textContent = two ? "Player 1's team" : 'Pick your team';
       $('oppLabel').textContent = two ? "Player 2's team" : 'Opponent';
       $('diffBox').classList.toggle('hidden', two);
-      $('teamGrid').innerHTML = '';
-      teams.forEach(t => {
-        const b = document.createElement('button');
-        b.className = 'team-btn' + (t.abbr === prefs.team ? ' active' : '');
-        b.innerHTML = `<span class="chip" style="background:${t.c1};border-color:${t.c2}"></span><span>${t.place} <b>${t.name}</b></span>`;
-        b.onclick = () => { prefs.team = t.abbr; savePrefs(); renderSetup(); };
-        $('teamGrid').appendChild(b);
-      });
-      const sel = $('oppSelect');
-      sel.innerHTML = `<option value="random">🎲 Random ${two ? 'team' : 'opponent'}</option>` +
-        teams.filter(t => t.abbr !== prefs.team).map(t => `<option value="${t.abbr}">${t.place} ${t.name}</option>`).join('');
-      sel.value = teams.find(t => t.abbr === prefs.opp && t.abbr !== prefs.team) ? prefs.opp : 'random';
+      // Same kind of picker for Player 1 and for Player 2 / the computer, each with a Random choice
+      const grid = (el, key, takenBy) => {
+        el.innerHTML = '';
+        const rnd = document.createElement('button');
+        rnd.className = 'team-btn' + (prefs[key] === 'random' ? ' active' : '');
+        rnd.innerHTML = `<span class="chip dice">🎲</span><span><b>Random</b></span>`;
+        rnd.onclick = () => { prefs[key] = 'random'; savePrefs(); renderSetup(); };
+        el.appendChild(rnd);
+        teams.forEach(t => {
+          const b = document.createElement('button');
+          b.className = 'team-btn' + (t.abbr === prefs[key] ? ' active' : '');
+          b.disabled = t.abbr === prefs[takenBy]; // the other side already has this team
+          b.innerHTML = `<span class="chip" style="background:${t.c1};border-color:${t.c2}"></span><span>${t.place} <b>${t.name}</b></span>`;
+          b.onclick = () => { prefs[key] = t.abbr; savePrefs(); renderSetup(); };
+          el.appendChild(b);
+        });
+      };
+      grid($('teamGrid'), 'team', 'opp');
+      grid($('oppGrid'), 'opp', 'team');
     }
-    document.querySelectorAll('[data-league]').forEach(b => b.onclick = () => { prefs.league = b.dataset.league; prefs.opp = 'random'; savePrefs(); renderSetup(); });
+    document.querySelectorAll('[data-league]').forEach(b => b.onclick = () => { prefs.league = b.dataset.league; savePrefs(); renderSetup(); });
     document.querySelectorAll('[data-diff]').forEach(b => b.onclick = () => { prefs.diff = b.dataset.diff; savePrefs(); renderSetup(); });
-    $('oppSelect').onchange = e => { prefs.opp = e.target.value; savePrefs(); };
     document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { prefs.mode = b.dataset.mode; savePrefs(); renderSetup(); });
 
     // ================= Field & drawing =================
@@ -345,9 +352,10 @@
 
     function startGame() {
       const teams = LEAGUES[prefs.league];
-      you = teams.find(t => t.abbr === prefs.team);
+      const pick = list => list[Math.floor(Math.random() * list.length)];
+      you = teams.find(t => t.abbr === prefs.team) || pick(teams.filter(t => t.abbr !== prefs.opp));
       const others = teams.filter(t => t.abbr !== you.abbr);
-      opp = prefs.opp !== 'random' && others.find(t => t.abbr === prefs.opp) || others[Math.floor(Math.random() * others.length)];
+      opp = others.find(t => t.abbr === prefs.opp) || pick(others);
       youColors = { fill: you.c1, ring: you.c2, text: textOn(you.c1) };
       // if the uniforms look too alike, the other team wears its second color
       oppColors = colorDist(you.c1, opp.c1) < 110
