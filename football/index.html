@@ -409,8 +409,8 @@
       if (mode === 'hidden') { pad.style.display = 'none'; return; }
       pad.style.display = '';
       const show = (k, on) => { pad.querySelector(`[data-k="${k}"]`).style.display = on ? '' : 'none'; };
-      const def = mode === 'defense', k = mode === 'kick', off = mode === 'offense', none = mode === 'none';
-      show('left', def); show('right', def); show('up', def || off); show('down', def || off); show('burst', !none);
+      const def = mode === 'defense', k = mode === 'kick', off = mode === 'offense', none = mode === 'none', ct = mode === 'catch';
+      show('left', def || ct); show('right', def || ct); show('up', def || off || ct); show('down', def || off || ct); show('burst', !none && !ct);
       const bb = pad.querySelector('[data-k="burst"]');
       bb.textContent = def ? '🔄' : k ? '🦶 KICK' : '⚡';
       bb.style.width = k ? '160px' : '';
@@ -425,6 +425,7 @@
         let m;
         if (n === 2 && !game.twoP) m = 'hidden';
         else if (kick) m = kick.team === side && kick.phase === 'aim' ? 'kick' : 'none';
+        else if (play && play.catchView && side === game.poss) m = 'catch';
         else m = side === game.poss ? 'offense' : 'defense';
         setOnePad(n, m);
       }
@@ -432,6 +433,7 @@
       $('keysTip').innerHTML = game.twoP
         ? '<b>Player 1:</b> W A S D to move · <b>Space</b> = speed burst / switch player / kick · <b>1 2 3 4</b> to throw<br><b>Player 2:</b> arrow keys to move · <b>Enter</b> = speed burst / switch player / kick · <b>7 8 9 0</b> to throw'
         : kick ? 'Press <b>Space</b> or tap the field when the marker is in the green'
+        : play && play.catchView ? 'Catch: <b>↑</b> runs downfield, <b>↓</b> comes back, <b>← →</b> move sideways. Get to the yellow ring!'
         : youDef ? 'Defense: <b>arrow keys</b> or <b>WASD</b> to move your player · <b>Space</b> to switch to the player nearest the ball'
         : 'Run: <b>↑ ↓</b> to dodge, <b>Space</b> for a speed burst · Pass: click a player or press <b>1 2 3 4</b> to throw';
     }
@@ -787,6 +789,7 @@
         if (pl.endT <= 0) { const r = pl.result; play.done = true; resolvePlay(r); }
         return;
       }
+      if (pl.catchView) dt *= 0.45; // slow motion for the catch
       pl.t += dt;
       const off = pl.off, def = pl.def;
       const isRun = pl.type === 'run';
@@ -824,7 +827,16 @@
         if (isRun && p.role === 'RB') { moveToward(p, pl.qb.x + 0.5, pl.qb.y + 0.3, 5, dt); continue; }
         // the receiver the ball is thrown to runs to where it will land
         if (pl.ball && pl.ball.flying && pl.ball.receiver === p) {
-          const b = pl.ball, left = Math.max(0.05, b.T - b.t);
+          const b = pl.ball;
+          if (pl.catchView) {
+            // you steer the receiver under the ball: ▲ = downfield, ▼ = back, ◀ ▶ = sideways
+            const I = pl.offIn;
+            const fx = (I.up ? 1 : 0) - (I.down ? 1 : 0), fy = (I.right ? 1 : 0) - (I.left ? 1 : 0), len = Math.hypot(fx, fy);
+            p.vx = len ? fx / len * p.speed : 0; p.vy = len ? fy / len * p.speed : 0;
+            p.x += p.vx * dt; p.y = Math.max(0.5, Math.min(FW - 0.5, p.y + p.vy * dt));
+            continue;
+          }
+          const left = Math.max(0.05, b.T - b.t);
           moveToward(p, b.tx, b.ty, Math.min(p.speed * 1.05, Math.hypot(b.tx - p.x, b.ty - p.y) / left + 0.5), dt);
           continue;
         }
@@ -876,8 +888,10 @@
         if (d === pl.ctrl) {
           // you move this defender (the field is drawn flipped, so "left" on screen is forward for them)
           const I = pl.defIn;
-          const ix = (I.right ? 1 : 0) - (I.left ? 1 : 0), iy = (I.down ? 1 : 0) - (I.up ? 1 : 0);
-          const wx = mirror ? -ix : ix, len = Math.hypot(wx, iy);
+          let ix = (I.right ? 1 : 0) - (I.left ? 1 : 0), iy = (I.down ? 1 : 0) - (I.up ? 1 : 0);
+          let wx = mirror ? -ix : ix;
+          if (pl.catchView) { wx = (I.up ? 1 : 0) - (I.down ? 1 : 0); iy = ix; }
+          const len = Math.hypot(wx, iy);
           const sp = 7.3;
           d.vx = len ? wx / len * sp : 0; d.vy = len ? iy / len * sp : 0;
           d.x += d.vx * dt; d.y = Math.max(0.3, Math.min(FW - 0.3, d.y + d.vy * dt));
@@ -887,7 +901,8 @@
         if (air) {
           const b = pl.ball;
           const near = Math.hypot(b.tx - d.x, b.ty - d.y) < 9;
-          if (near) { tx = b.tx; ty = b.ty; }
+          // defenders react a little late: they go for the receiver and the ball, not exactly the landing spot
+          if (near) { tx = (b.tx + b.receiver.x) / 2 + 0.6; ty = (b.ty + b.receiver.y) / 2; sp *= 0.85; }
           else { tx = b.receiver.x; ty = b.receiver.y; }
         } else if (c || isRun) {
           // chase with a little lead
@@ -956,6 +971,8 @@
       if (pl.ball && pl.ball.flying) {
         const b = pl.ball;
         b.t += dt;
+        if (pl.humanOff && !b.catchView && b.t >= b.T * 0.5 && b.T > 0.45) startCatchView(pl, b);
+        const bp = ballPos(b); b.x = bp.x; b.y = bp.y;
         if (b.t >= b.T) resolveCatch();
       }
       // QB holds too long → throw it away
@@ -990,6 +1007,30 @@
       for (let t = 0; t < T; t += 1 / 60) followRoute(g, 1 / 60);
       return { x: g.x, y: g.y };
     }
+    // Where the ball is right now (it can change course a little when the catch camera starts)
+    function ballPos(b) {
+      const f = Math.min(1, b.t / b.T);
+      const h = Math.sin(f * Math.PI) * b.apexH;
+      if (b.ts != null) {
+        const k = Math.min(1, (b.t - b.ts) / Math.max(0.01, b.T - b.ts));
+        return { x: b.sx + (b.tx - b.sx) * k, y: b.sy + (b.ty - b.sy) * k, h };
+      }
+      return { x: b.fx + (b.tx - b.fx) * f, y: b.fy + (b.ty - b.fy) * f, h };
+    }
+    function startCatchView(pl, b) {
+      const now = ballPos(b);
+      b.sx = now.x; b.sy = now.y; b.ts = b.t;
+      // the ball drifts a little, so you have to move to it
+      const ang = Math.random() * Math.PI * 2, dist = 1.0 + Math.random() * 1.4;
+      b.tx += Math.cos(ang) * dist;
+      b.ty = Math.max(1, Math.min(FW - 1, b.ty + Math.sin(ang) * dist));
+      b.catchView = true;
+      pl.catchView = true;
+      cv.x = Math.min(b.receiver.x - 6, now.x - 4, b.tx - 7); cv.y = b.receiver.y;
+      setPads();
+      status('👀 Get under the ball! ▲ ▼ ◀ ▶ (WASD / arrows) to move to the yellow ring');
+    }
+
     function throwTo(r, byComputer) {
       const pl = play;
       if (!pl || pl.over || pl.type === 'run' || pl.ball || pl.carrier || pl.t < 0.3) return;
@@ -1003,7 +1044,7 @@
         tx = f.x; ty = Math.max(0.8, Math.min(FW - 0.8, f.y));
         T = Math.max(0.25, Math.hypot(tx - qb.x, ty - qb.y) / speedBall);
       }
-      pl.ball = { flying: true, fx: qb.x, fy: qb.y, tx, ty, t: 0, T, receiver: r, x: qb.x, y: qb.y };
+      pl.ball = { flying: true, fx: qb.x, fy: qb.y, tx, ty, t: 0, T, receiver: r, x: qb.x, y: qb.y, apexH: Math.min(6, T * 3) };
       pl.ballHolder = null;
       beep(520, 0.08, 'triangle');
       status(pl.youOff ? 'Ball is in the air…' : '🏈 They threw it! Get to the ball!');
@@ -1023,7 +1064,11 @@
       const long = Math.hypot(b.tx - b.fx, b.ty - b.fy) > 25;
       const roll = Math.random();
       let out;
-      if (recDist > 2.4) out = near < 1.5 && roll < 0.35 ? 'int' : 'inc';
+      const reach = b.catchView ? 1.7 : 2.4;
+      pl.lastCatch = { recDist, near };
+      pl.catchView = false;
+      setPads();
+      if (recDist > reach) out = near < 1.5 && roll < 0.35 ? 'int' : 'inc';
       else if (near < 1.0) out = roll < (nearD === pl.ctrl ? 0.3 : 0.15) ? 'int' : roll < 0.6 ? 'inc' : 'catch';
       else if (near < 2.2) out = roll < (long ? 0.08 : 0.03) ? 'int' : roll < (long ? 0.55 : 0.25) ? 'inc' : 'catch';
       else out = roll < (long ? 0.25 : 0.06) ? 'inc' : 'catch';
@@ -1037,7 +1082,7 @@
         status(pl.youOff ? '😱 INTERCEPTED!' : '🙌 INTERCEPTION! Your ball!');
         endPlay({ kind: 'int', x: nearD ? nearD.x : b.tx });
       } else {
-        status(pl.youOff ? 'Incomplete pass.' : '🚫 Pass broken up! Incomplete.');
+        status(b.catchView && recDist > reach ? '😬 Not under the ball! Incomplete.' : pl.youOff ? 'Incomplete pass.' : '🚫 Pass broken up! Incomplete.');
         endPlay({ kind: 'inc' });
       }
     }
@@ -1186,6 +1231,112 @@
         setPadMode(game.poss === 'you' ? 'offense' : 'defense');
         fn(good);
       }
+    }
+
+    // ----- Behind-the-receiver camera -----
+    const cv = { x: 0, y: 0 };
+    function drawStadium(H, cheerAmt) {
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#0d1b3d'); sky.addColorStop(1, '#3e6aa8');
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, CW, H);
+      ctx.fillStyle = '#1d2333'; ctx.fillRect(0, H * 0.5, CW, H * 0.5);
+      let seed = 11;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 600; i++) {
+        const x = rnd() * CW, y = H * 0.52 + rnd() * (H * 0.46);
+        const c = rnd();
+        ctx.fillStyle = c < 0.45 ? you.c1 : c < 0.6 ? you.c2 : c < 0.8 ? opp.c1 : '#d9d9d9';
+        ctx.fillRect(x, y + (cheerAmt ? Math.sin(performance.now() / 60 + i) * cheerAmt : 0), 4, 4);
+      }
+    }
+    function drawCatchView(pl) {
+      const b = pl.ball, r = b.receiver;
+      const bpos = ballPos(b);
+      // stay behind the receiver, and behind the ball so you can see it come down
+      const wantX = Math.min(r.x - 6, bpos.x - 4, b.tx - 7);
+      cv.x += (wantX - cv.x) * 0.12;
+      cv.y += ((r.y * 0.6 + b.ty * 0.4) - cv.y) * 0.12;
+      const F = 430, H = 250, camH = 3.2;
+      const proj = (x, y, h) => {
+        const d = x - cv.x;
+        if (d < 0.7) return null;
+        return { X: CW / 2 + (y - cv.y) * F / d, Y: H + (camH - h) * F / d, s: F / d, d };
+      };
+      drawStadium(H, 0);
+      ctx.fillStyle = '#3f8f3a'; ctx.fillRect(0, H, CW, CH - H);
+      // stripes and yard lines
+      const first = Math.ceil((cv.x + 1) / 5) * 5;
+      for (let x = first - 5; x < cv.x + 90; x += 5) {
+        const a = proj(Math.max(x, cv.x + 0.8), 0, 0), c = proj(x + 5, 0, 0);
+        if (!a || !c) continue;
+        ctx.fillStyle = (Math.round(x / 5) % 2) ? '#3a8635' : '#44973f';
+        ctx.fillRect(0, c.Y, CW, a.Y - c.Y + 1);
+      }
+      for (let x = first; x < cv.x + 90; x += 5) {
+        const a = proj(x, 0, 0), c = proj(x, FW, 0);
+        if (!a) continue;
+        ctx.strokeStyle = x === 10 || x === 110 ? '#fff' : 'rgba(255,255,255,0.75)';
+        ctx.lineWidth = Math.max(1, 0.15 * a.s);
+        ctx.beginPath(); ctx.moveTo(a.X, a.Y); ctx.lineTo(c.X, c.Y); ctx.stroke();
+      }
+      // end zone ahead
+      const g1 = proj(Math.max(110, cv.x + 0.8), 0, 0), g2 = proj(Math.max(110, cv.x + 0.8), FW, 0), g3 = proj(120, FW, 0), g4 = proj(120, 0, 0);
+      if (g1 && g3) {
+        const t = pl.youOff ? opp : you;
+        ctx.fillStyle = t.c1; ctx.beginPath(); ctx.moveTo(g1.X, g1.Y); ctx.lineTo(g2.X, g2.Y); ctx.lineTo(g3.X, g3.Y); ctx.lineTo(g4.X, g4.Y); ctx.fill();
+      }
+      // sidelines
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      for (const y of [0, FW]) { const a = proj(cv.x + 0.8, y, 0), c = proj(cv.x + 90, y, 0); ctx.beginPath(); ctx.moveTo(a.X, a.Y); ctx.lineTo(c.X, c.Y); ctx.stroke(); }
+
+      // where the ball will land
+      const L = proj(b.tx, b.ty, 0);
+      if (L) {
+        const pulse = 1 + Math.sin(performance.now() / 120) * 0.12;
+        ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = Math.max(2, 0.12 * L.s);
+        ctx.beginPath(); ctx.ellipse(L.X, L.Y, 1.1 * L.s * pulse, 0.38 * L.s * pulse, 0, 0, 7); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,210,63,0.25)'; ctx.fill();
+      }
+
+      // players, far ones first
+      const people = pl.P.map(p => ({ p, q: proj(p.x, p.y, 0) })).filter(o => o.q).sort((a, c) => c.q.d - a.q.d);
+      const bp = ballPos(b);
+      const ballQ = proj(bp.x, bp.y, bp.h), shadowQ = proj(bp.x, bp.y, 0);
+      let ballDrawn = false;
+      const drawBallNow = () => {
+        if (ballDrawn || !ballQ) return;
+        ballDrawn = true;
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(shadowQ.X, shadowQ.Y, 0.35 * shadowQ.s, 0.12 * shadowQ.s, 0, 0, 7); ctx.fill();
+        const bs = Math.max(4, 0.32 * ballQ.s);
+        ctx.save(); ctx.translate(ballQ.X, ballQ.Y); ctx.rotate(performance.now() / 90);
+        ctx.fillStyle = '#8b4513'; ctx.beginPath(); ctx.ellipse(0, 0, bs, bs * 0.62, 0, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, bs / 6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-bs * 0.4, 0); ctx.lineTo(bs * 0.4, 0); ctx.stroke();
+        ctx.restore();
+      };
+      for (const { p, q } of people) {
+        if (ballQ && q.d < (bp.x - cv.x)) drawBallNow(); // ball is behind this player
+        const c = colorsFor(p), s = q.s;
+        if (p === r || p === pl.ctrl) {
+          ctx.strokeStyle = p === r ? '#ffffff' : '#ffd23f'; ctx.lineWidth = Math.max(2, 0.1 * s);
+          ctx.beginPath(); ctx.ellipse(q.X, q.Y, 0.8 * s, 0.28 * s, 0, 0, 7); ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(q.X, q.Y, 0.5 * s, 0.16 * s, 0, 0, 7); ctx.fill();
+        // legs, body, helmet
+        ctx.fillStyle = '#e8e8e8'; ctx.fillRect(q.X - 0.28 * s, q.Y - 0.9 * s, 0.22 * s, 0.9 * s); ctx.fillRect(q.X + 0.06 * s, q.Y - 0.9 * s, 0.22 * s, 0.9 * s);
+        ctx.fillStyle = c.fill; ctx.beginPath(); ctx.ellipse(q.X, q.Y - 1.35 * s, 0.42 * s, 0.55 * s, 0, 0, 7); ctx.fill();
+        ctx.strokeStyle = c.ring; ctx.lineWidth = Math.max(1, 0.08 * s); ctx.stroke();
+        ctx.fillStyle = c.ring; ctx.beginPath(); ctx.arc(q.X, q.Y - 2.05 * s, 0.27 * s, 0, 7); ctx.fill();
+        if (s > 14) {
+          ctx.fillStyle = c.text; ctx.font = `800 ${Math.round(0.4 * s)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(p.num, q.X, q.Y - 1.35 * s);
+        }
+      }
+      drawBallNow();
+
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(CW / 2 - 230, 10, 460, 40);
+      ctx.fillStyle = '#fff'; ctx.font = '800 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('CATCH IT! Get to the yellow ring', CW / 2, 30);
     }
 
     function drawKick(k) {
@@ -1442,6 +1593,7 @@
 
     function draw() {
       if (kick) drawKick(kick);
+      else if (play && play.catchView && play.ball) drawCatchView(play);
       else {
         drawField();
         if (game) {
@@ -1472,9 +1624,8 @@
             });
           }
           if (play.ball && play.ball.flying) {
-            const b = play.ball, f = Math.min(1, b.t / b.T);
-            b.x = b.fx + (b.tx - b.fx) * f; b.y = b.fy + (b.ty - b.fy) * f;
-            drawBall(b.x, b.y, Math.sin(f * Math.PI) * Math.min(6, b.T * 3));
+            const b = play.ball, bp = ballPos(b);
+            drawBall(bp.x, bp.y, bp.h);
             ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.setLineDash([4, 6]); ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(sx(b.tx), sy(b.ty), 10, 0, 7); ctx.stroke(); ctx.setLineDash([]);
           } else if (play.ballHolder) {
