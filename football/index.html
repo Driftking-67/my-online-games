@@ -413,7 +413,7 @@
       pad.style.display = '';
       const show = (k, on) => { pad.querySelector(`[data-k="${k}"]`).style.display = on ? '' : 'none'; };
       const def = mode === 'defense', k = mode === 'kick', off = mode === 'offense', none = mode === 'none', ct = mode === 'catch';
-      show('left', def || ct); show('right', def || ct); show('up', def || off || ct); show('down', def || off || ct); show('burst', !none && !ct);
+      show('left', def || ct || off); show('right', def || ct || off); show('up', def || off || ct); show('down', def || off || ct); show('burst', !none && !ct);
       const bb = pad.querySelector('[data-k="burst"]');
       bb.textContent = def ? '🔄' : k ? '🦶 KICK' : '⚡';
       bb.style.width = k ? '160px' : '';
@@ -438,7 +438,7 @@
         : kick ? 'Press <b>Space</b> or tap the field when the marker is in the green'
         : play && play.catchView ? 'Catch: <b>↑</b> runs downfield, <b>↓</b> comes back, <b>← →</b> move sideways. Get to the yellow ring!'
         : youDef ? 'Defense: <b>arrow keys</b> or <b>WASD</b> to move your player · <b>Space</b> to switch to the player nearest the ball'
-        : 'Run: <b>↑ ↓</b> to dodge, <b>Space</b> for a speed burst · Pass: click a player or press <b>1 2 3 4</b> to throw';
+        : 'Run with the <b>arrow keys</b> or <b>WASD</b> (any direction — cut back to juke!), <b>Space</b> for a speed burst · Pass: click a player or press <b>1 2 3 4</b> to throw';
     }
     const setPadMode = () => setPads();
 
@@ -622,7 +622,7 @@
       const p = game.twoP ? (side === 'you' ? 'Player 1' : 'Player 2') + ': ' : '';
       const d = game.twoP ? ` ${side === 'you' ? 'Player 2' : 'Player 1'}: stop them with your gold-ring defender!` : '';
       const P = PLAYBOOK[id];
-      status(p + `${P.icon} ${P.name}! ` + (P.kind === 'run' ? 'Use ▲ ▼ to dodge and ⚡ to burst.' : P.pa ? 'Fake the handoff… then tap a receiver to throw!' : 'Tap a receiver to throw!') + d);
+      status(p + `${P.icon} ${P.name}! ` + (P.kind === 'run' ? 'Run any direction, cut back to juke, ⚡ to burst.' : P.pa ? 'Fake the handoff… then tap a receiver to throw!' : 'Tap a receiver to throw!') + d);
     }
 
     function punt(side) {
@@ -806,7 +806,7 @@
         ctrl: youOff && !game.twoP ? null : lbs[1],
         humanOff: youOff || game.twoP,
         offIn: inputs[youOff ? 1 : 2], defIn: inputs[youOff ? 2 : 1], defWas: false,
-        switchCool: 0,
+        switchCool: 0, jukeCool: 0,
       };
       camX = clampCam(L - 18);
     }
@@ -950,12 +950,43 @@
         if (pl.humanOff && pl.offIn.burst && !pl.burstUsed) { pl.burstUsed = true; pl.burst = 1.0; beep(700, 0.15, 'triangle'); }
         if (pl.burst > 0) pl.burst -= dt;
         const sp = c.speed * (c.role === 'RB' ? 1 : 0.93) * (pl.burst > 0 ? 1.45 : 1);
-        c.vx = sp * 0.96;
         if (pl.humanOff) {
-          c.vy = ((pl.offIn.up ? -1 : 0) + (pl.offIn.down ? 1 : 0)) * 4.9;
-          // if you're not steering right after the handoff, the runner heads for the hole
-          if (!c.vy && isRun && pl.t < 1.25) { const dy = pl.hole - c.y; c.vy = Math.abs(dy) > 0.3 ? Math.sign(dy) * 4.9 : 0; }
-        } else c.vy = cpuSteer(pl, c);
+          // You steer in any direction: forward, backward, sideways, or stop.
+          // (The field is drawn flipped for Player 2, so "forward" is screen-left for them.)
+          const I = pl.offIn;
+          const ix = (I.right ? 1 : 0) - (I.left ? 1 : 0);
+          const fx = mirror ? -ix : ix, fy = (I.down ? 1 : 0) - (I.up ? 1 : 0);
+          const len = Math.hypot(fx, fy);
+          if (len) {
+            const nx = fx / len, ny = fy / len;
+            // a sharp change of direction right next to a defender can juke him out
+            if (pl.jukeCool <= 0 && c.dirX != null && (nx * c.dirX + ny * c.dirY) < 0.1) {
+              for (const d of def) {
+                if (d.engaged || d.stun > 0 || d === pl.ctrl) continue;
+                if (Math.hypot(d.x - c.x, d.y - c.y) < 2.6 && Math.random() < 0.55) {
+                  d.stun = 0.7;
+                  pl.jukeCool = 0.8;
+                  status('🕺 JUKE! He fell for it!');
+                  beep(900, 0.08, 'triangle'); setTimeout(() => beep(1200, 0.1, 'triangle'), 70);
+                  break;
+                }
+              }
+            }
+            c.dirX = nx; c.dirY = ny;
+            c.vx = nx * sp; c.vy = ny * sp * 0.9;
+          } else if (isRun && pl.t < 1.25) {
+            // right after the handoff, the runner heads for the hole until you take over
+            const dy = pl.hole - c.y;
+            c.vx = sp * 0.96; c.vy = Math.abs(dy) > 0.3 ? Math.sign(dy) * 4.9 : 0;
+            c.dirX = 1; c.dirY = 0;
+          } else {
+            c.vx = 0; c.vy = 0; // standing still
+          }
+          if (pl.jukeCool > 0) pl.jukeCool -= dt;
+        } else {
+          c.vx = sp * 0.96;
+          c.vy = cpuSteer(pl, c);
+        }
         c.x += c.vx * dt; c.y += c.vy * dt;
         if (c.y < 0.2 || c.y > FW - 0.2) return endPlay({ kind: 'oob', x: c.x });
         if (c.x >= 110) return endPlay({ kind: 'td', x: c.x });
@@ -1172,7 +1203,7 @@
         r.x = b.tx; r.y = b.ty;
         pl.carrier = r; pl.ballHolder = r; pl.ball = null;
         pl.burstUsed = false;
-        status(pl.youOff ? '✅ Caught it! Run! ▲ ▼ to dodge, ⚡ to burst' : 'They caught it! Tackle him!');
+        status(pl.humanOff ? '✅ Caught it! Run any direction — cut back to juke, ⚡ to burst' : 'They caught it! Tackle him!');
         beep(pl.youOff ? 880 : 300, 0.12);
       } else if (out === 'int') {
         status(pl.youOff ? '😱 INTERCEPTED!' : '🙌 INTERCEPTION! Your ball!');
