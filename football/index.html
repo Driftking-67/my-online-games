@@ -868,7 +868,7 @@
         if (pl.endT <= 0) { const r = pl.result; play.done = true; resolvePlay(r); }
         return;
       }
-      if (pl.catchView) dt *= 0.45; // slow motion for the catch
+      if (pl.catchView) dt *= pl.slowF || 0.45; // slow motion for the catch
       pl.t += dt;
       const off = pl.off, def = pl.def;
       const isRun = pl.type === 'run';
@@ -922,7 +922,8 @@
             // you steer the receiver under the ball: ▲ = downfield, ▼ = back, ◀ ▶ = sideways
             const I = pl.offIn;
             const fx = (I.up ? 1 : 0) - (I.down ? 1 : 0), fy = (I.right ? 1 : 0) - (I.left ? 1 : 0), len = Math.hypot(fx, fy);
-            p.vx = len ? fx / len * p.speed : 0; p.vy = len ? fy / len * p.speed : 0;
+            const sp = p.speed * 1.2;
+            p.vx = len ? fx / len * sp : 0; p.vy = len ? fy / len * sp : 0;
             p.x += p.vx * dt; p.y = Math.max(0.5, Math.min(FW - 0.5, p.y + p.vy * dt));
             continue;
           }
@@ -1114,11 +1115,13 @@
       const now = ballPos(b);
       b.sx = now.x; b.sy = now.y; b.ts = b.t;
       // the ball drifts a little, so you have to move to it
-      const ang = Math.random() * Math.PI * 2, dist = 1.0 + Math.random() * 1.4;
+      const ang = Math.random() * Math.PI * 2, dist = 0.6 + Math.random() * 0.9;
       b.tx += Math.cos(ang) * dist;
       b.ty = Math.max(1, Math.min(FW - 1, b.ty + Math.sin(ang) * dist));
       b.catchView = true;
       pl.catchView = true;
+      // slow down enough that you always get about 2 seconds to get under it
+      pl.slowF = Math.max(0.12, Math.min(0.45, (b.T - b.t) / 2.0));
       cv.x = Math.min(b.receiver.x - 6, now.x - 4, b.tx - 7); cv.y = b.receiver.y;
       setPads();
       status('👀 Get under the ball! ▲ ▼ ◀ ▶ (WASD / arrows) to move to the yellow ring');
@@ -1157,7 +1160,7 @@
       const long = Math.hypot(b.tx - b.fx, b.ty - b.fy) > 25;
       const roll = Math.random();
       let out;
-      const reach = b.catchView ? 1.7 : 2.4;
+      const reach = b.catchView ? 2.1 : 2.4;
       pl.lastCatch = { recDist, near };
       pl.catchView = false;
       setPads();
