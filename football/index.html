@@ -54,6 +54,9 @@
     .plays button { padding: 12px 8px; font-size: 1.05rem; font-weight: 700; }
     .plays button small { display: block; font-weight: 500; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
     .plays button.special { border-color: #c99700; }
+    .plays .group { grid-column: 1 / -1; font-weight: 800; color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+    .plays button.card { padding: 6px 6px 8px; font-size: 0.95rem; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }
+    .plays button.card svg { display: block; width: 100%; height: auto; border-radius: 6px; background: #3f8f3a; margin-bottom: 4px; }
     #cpuLog { font-size: 0.95rem; line-height: 1.6; max-height: 210px; overflow-y: auto; margin: 8px 0; }
     .mini { position: relative; height: 18px; border-radius: 9px; background: #3f8f3a; margin: 6px 0; }
     .mini .ballmark { position: absolute; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #8b4513; border: 2px solid #fff; transition: left 0.35s; transform: translateX(-50%); }
@@ -452,6 +455,69 @@
       showPlays();
     }
 
+    // ================= Playbook =================
+    // Pass routes are [yards downfield, yards toward the middle] steps. RB steps use [downfield, up(-)/down(+)].
+    // "hold" means the receiver stops at the end of his route (for curls and screens).
+    const PLAYBOOK = {
+      dive:     { kind: 'run', name: 'HB Dive', icon: '🏃', desc: 'Straight up the middle', hole: 1.2 },
+      offtackle:{ kind: 'run', name: 'Off Tackle', icon: '💪', desc: 'Just outside the line', hole: 4.5 },
+      sweep:    { kind: 'run', name: 'Toss Sweep', icon: '↪️', desc: 'Race to the outside', hole: 10, handoff: 0.3 },
+      sneak:    { kind: 'run', name: 'QB Sneak', icon: '🧱', desc: 'Push 1-2 yards, great on 4th & 1', qbRun: true, hole: 0.5 },
+      slants:   { kind: 'short', name: 'Slants', icon: '⚡', desc: 'Quick cuts to the middle',
+                  wr: [[4, 0], [10, 7], [14, 5]], te: [[5, 0], [10, 5]], rb: [[1, -6], [5, -4], [10, 0]] },
+      curls:    { kind: 'short', name: 'Curls', icon: '🔁', desc: 'Run 11 yards, turn back for the ball',
+                  wr: [[11, 0], [-2, 1.5]], te: [[9, 0], [-2, 1.5]], rb: [[1, 6], [5, 4]], hold: true },
+      outs:     { kind: 'short', name: 'Outs', icon: '↔️', desc: 'Break to the sideline',
+                  wr: [[8, 0], [1, -6]], te: [[6, 0], [1, -6]], rb: [[1, -6], [5, -4], [10, 0]] },
+      screen:   { kind: 'short', name: 'HB Screen', icon: '🧲', desc: 'Short toss to the running back',
+                  wr: [[25, 0]], te: [[18, 0]], rb: [[3, -7], [1, -2]], rbHold: true, screen: true },
+      verticals:{ kind: 'deep', name: 'Four Verticals', icon: '🚀', desc: 'Everybody runs deep',
+                  wr: [[40, 1]], te: [[35, 0]], rb: [[2, -6], [6, -4], [12, 0]] },
+      deepshots:{ kind: 'deep', name: 'Post & Go', icon: '🎯', desc: 'A go route and a deep post',
+                  wr1: [[30, 1], [20, 0]], wr2: [[10, 0], [26, 8], [10, 3]], te: [[22, 0], [20, 0]], rb: [[2, -6], [6, -4], [10, 0]] },
+      playaction:{ kind: 'deep', name: 'Play Action', icon: '🎭', desc: 'Fake the run, then throw deep',
+                  wr1: [[35, 0]], wr2: [[12, 0], [24, 8]], te: [[3, 0], [4, 8], [12, 6]], rb: [[3, 0], [2, -5]], pa: true },
+      hailmary: { kind: 'deep', name: 'Hail Mary', icon: '🙏', desc: 'Throw it up and hope!',
+                  wr: [[50, 2]], te: [[45, 0]], rb: [[3, -6], [40, 0]], hail: true },
+    };
+    const RUNS = ['dive', 'offtackle', 'sweep', 'sneak'];
+    const PASSES = ['slants', 'curls', 'outs', 'screen', 'verticals', 'deepshots', 'playaction', 'hailmary'];
+
+    // A little chalkboard drawing of a play
+    function playDiagram(id) {
+      const P = PLAYBOOK[id];
+      const X = yd => 34 + yd * 1.9, Y = y => 4 + y * (72 / 30);
+      const M = 15;
+      let g = `<svg viewBox="0 0 120 80" aria-hidden="true">`;
+      g += `<line x1="${X(0)}" y1="2" x2="${X(0)}" y2="78" stroke="#8ec5ff" stroke-width="1"/>`;
+      const dot = (x, y, fill) => `<circle cx="${X(x)}" cy="${Y(y)}" r="2.6" fill="${fill}" stroke="#fff" stroke-width="0.8"/>`;
+      const path = (pts, color, dash) => {
+        const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${X(x).toFixed(1)},${Y(y).toFixed(1)}`).join(' ');
+        const [ax, ay] = pts[pts.length - 1], [bx, by] = pts[pts.length - 2];
+        const ang = Math.atan2(Y(ay) - Y(by), X(ax) - X(bx));
+        const hx = X(ax), hy = Y(ay);
+        const head = `M${(hx - 4 * Math.cos(ang - 0.5)).toFixed(1)},${(hy - 4 * Math.sin(ang - 0.5)).toFixed(1)} L${hx.toFixed(1)},${hy.toFixed(1)} L${(hx - 4 * Math.cos(ang + 0.5)).toFixed(1)},${(hy - 4 * Math.sin(ang + 0.5)).toFixed(1)}`;
+        return `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" ${dash ? 'stroke-dasharray="3 2"' : ''}/><path d="${head}" fill="none" stroke="${color}" stroke-width="1.6"/>`;
+      };
+      const walk = (x, y, steps, sign) => { const pts = [[x, y]]; for (const [dx, dy] of steps) { x += dx; y = Math.max(1.5, Math.min(28.5, y + dy * sign)); pts.push([x, y]); } return pts; };
+      for (const dy of [-4, -2, 0, 2, 4]) g += dot(-0.8, M + dy, '#bbb');
+      if (P.kind === 'run') {
+        const hy = M - P.hole;
+        if (P.qbRun) g += path([[-3.5, M], [6, M]], '#ffd23f');
+        else if (P.handoff) g += path([[-6.5, M], [-4, M - 6], [2, hy], [12, hy]], '#ffd23f');
+        else g += path([[-6.5, M], [-3, M], [0, hy], [12, hy]], '#ffd23f');
+      } else {
+        const wr1 = P.wr1 || P.wr, wr2 = P.wr2 || P.wr;
+        g += path(walk(-0.8, 3.2, wr1, 1), '#fff');
+        g += path(walk(-0.8, 26.8, wr2, -1), '#fff');
+        g += path(walk(-1, M + 7, P.te, -1), '#fff');
+        g += path(walk(-6.5, M, P.rb, 1), P.pa ? '#ffd23f' : '#fff', P.pa);
+      }
+      g += dot(-3.5, M, '#ffd23f') + dot(-6.5, M, '#fff');
+      g += dot(-0.8, 3.2, '#fff') + dot(-0.8, 26.8, '#fff') + dot(-1, M + 7, '#fff');
+      return g + '</svg>';
+    }
+
     function showPlays() { offensePicker(game.poss); }
 
     function offensePicker(side) {
@@ -463,22 +529,31 @@
       $('pickTitle').textContent = g.conv ? `🏈 ${g.twoP ? who(side) + ': t' : 'T'}wo-point try! Pick a play` : `🏈 ${label}: pick a play`;
       const fourth = g.down === 4 && !g.conv;
       const fgDist = 117 - g.ballOn;
-      const opts = [
-        ['run', '🏃 Run', 'Steer past tacklers'],
-        ['short', '🎯 Short pass', 'Quick, safer throws'],
-        ['deep', '🚀 Deep pass', 'Big gains, riskier'],
-      ];
-      if (fourth) {
-        opts.push(['punt', '🦶 Punt', 'Kick it away']);
-        if (fgDist <= 62) opts.push(['fg', '🥅 Field goal', `${fgDist}-yard try`]);
-      }
       $('plays').innerHTML = '';
-      for (const [id, lbl, small] of opts) {
-        const b = document.createElement('button');
-        if (id === 'punt' || id === 'fg') b.className = 'special';
-        b.innerHTML = `${lbl}<small>${small}</small>`;
-        b.onclick = () => callPlay(id, side);
-        $('plays').appendChild(b);
+      const header = t => { const h = document.createElement('div'); h.className = 'group'; h.textContent = t; $('plays').appendChild(h); };
+      if (fourth) {
+        header('4th down: kick it?');
+        const opts = [['punt', '🦶 Punt', 'Kick it away']];
+        if (fgDist <= 62) opts.push(['fg', '🥅 Field goal', `${fgDist}-yard try`]);
+        for (const [id, lbl, small] of opts) {
+          const b = document.createElement('button');
+          b.className = 'special';
+          b.innerHTML = `${lbl}<small>${small}</small>`;
+          b.onclick = () => callPlay(id, side);
+          $('plays').appendChild(b);
+        }
+      }
+      for (const [title, list] of [['🏃 Running plays', RUNS], ['🎯 Passing plays', PASSES]]) {
+        header(title);
+        for (const id of list) {
+          if (id === 'hailmary' && g.conv) continue;
+          const P = PLAYBOOK[id];
+          const b = document.createElement('button');
+          b.className = 'card';
+          b.innerHTML = `${playDiagram(id)}${P.icon} ${P.name}<small>${P.desc}</small>`;
+          b.onclick = () => callPlay(id, side);
+          $('plays').appendChild(b);
+        }
       }
       if (fourth) status(`4th down! ${g.twoP ? who(side) + ': go' : 'Go'} for it, or kick?`);
     }
@@ -546,7 +621,8 @@
     function startStatus(side, id) {
       const p = game.twoP ? (side === 'you' ? 'Player 1' : 'Player 2') + ': ' : '';
       const d = game.twoP ? ` ${side === 'you' ? 'Player 2' : 'Player 1'}: stop them with your gold-ring defender!` : '';
-      status(p + (id === 'run' ? 'Run! Use ▲ ▼ to dodge and ⚡ to burst.' : 'Tap a receiver to throw!') + d);
+      const P = PLAYBOOK[id];
+      status(p + `${P.icon} ${P.name}! ` + (P.kind === 'run' ? 'Use ▲ ▼ to dodge and ⚡ to burst.' : P.pa ? 'Fake the handoff… then tap a receiver to throw!' : 'Tap a receiver to throw!') + d);
     }
 
     function punt(side) {
@@ -647,10 +723,15 @@
 
     function cpuPickPlay() {
       const g = game, r = Math.random();
-      if (g.conv) return r < 0.5 ? 'run' : 'short';
-      if (g.toGo <= 2) return r < 0.65 ? 'run' : r < 0.9 ? 'short' : 'deep';
-      if (g.down >= 3 && g.toGo >= 7) return r < 0.15 ? 'run' : r < 0.65 ? 'short' : 'deep';
-      return r < 0.45 ? 'run' : r < 0.8 ? 'short' : 'deep';
+      let kind;
+      if (g.conv) kind = r < 0.5 ? 'run' : 'short';
+      else if (g.toGo <= 2) kind = r < 0.65 ? 'run' : r < 0.9 ? 'short' : 'deep';
+      else if (g.down >= 3 && g.toGo >= 7) kind = r < 0.15 ? 'run' : r < 0.65 ? 'short' : 'deep';
+      else kind = r < 0.45 ? 'run' : r < 0.8 ? 'short' : 'deep';
+      const pick = list => list[Math.floor(Math.random() * list.length)];
+      if (kind === 'run') return g.toGo <= 1 && Math.random() < 0.5 ? 'sneak' : pick(['dive', 'offtackle', 'sweep']);
+      if (kind === 'short') return pick(['slants', 'curls', 'outs', 'screen']);
+      return pick(['verticals', 'deepshots', 'playaction']);
     }
 
     function callDefense(scheme) {
@@ -669,7 +750,9 @@
     function mk(team, role, x, y, num, speed) {
       return { team, role, x, y, num, speed, vx: 0, vy: 0, stun: 0, engaged: null, engageT: 0, shedT: 0, route: null, wp: 0, dir: [1, 0] };
     }
-    function setupPlay(offTeam, type, scheme) {
+    function setupPlay(offTeam, playId, scheme) {
+      const PB = PLAYBOOK[playId] || PLAYBOOK.dive;
+      const type = PB.kind;
       const youOff = offTeam === 'you';
       mirror = !youOff;
       scheme = scheme || 'base';
@@ -702,28 +785,24 @@
       for (const p of P) p.cushion = prevent ? 3 : 0.9;
 
       if (type !== 'run') {
-        // routes, as [downfield, sideways] steps from where they start
-        const route = (p, steps) => { let x = p.x, y = p.y; p.route = steps.map(([dx, dy]) => ({ x: (x += dx), y: (y = Math.max(1.5, Math.min(FW - 1.5, y + dy))) })); };
-        if (type === 'deep') {
-          route(wr1, [[30, 1], [20, 0]]);
-          route(wr2, [[10, 0], [26, -8], [10, -3]]);
-          route(te, [[22, 0], [20, 0]]);
-          route(rb, [[2, -6], [6, -4], [10, 0]]);
-        } else {
-          route(wr1, [[5, 0], [8, 6], [16, 5]]);
-          route(wr2, [[7, 0], [1, 3], [3, 2]]);
-          route(te, [[5, 0], [3, 4], [14, 2]]);
-          route(rb, [[1, -6], [5, -4], [10, 0]]);
-        }
+        // routes from the playbook; "sign" turns "toward the middle" into up or down on the field
+        const route = (p, steps, sign) => { let x = p.x, y = p.y; p.route = steps.map(([dx, dy]) => ({ x: (x += dx), y: (y = Math.max(1.5, Math.min(FW - 1.5, y + dy * sign))) })); };
+        route(wr1, PB.wr1 || PB.wr, 1);
+        route(wr2, PB.wr2 || PB.wr, -1);
+        route(te, PB.te, -1);
+        route(rb, PB.rb, 1);
+        if (PB.hold) wr1.hold = wr2.hold = te.hold = true;
+        if (PB.rbHold) rb.hold = true;
       }
       play = {
         offTeam, youOff, type, scheme, t: 0, P, qb, rb, receivers: [wr1, te, wr2, rb], L,
         off: P.filter(p => p.team === 'off'), def: P.filter(p => p.team === 'def'),
         carrier: null, ballHolder: qb, ball: null, over: false, endT: 0, result: null,
         burst: 0, burstUsed: false, blockMul: game.twoP ? 1 : youOff ? game.d.block : game.d.cpuBlock,
-        hole: FW / 2 + (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 4),
+        playId, pb: PB,
+        hole: FW / 2 + (Math.random() < 0.5 ? -1 : 1) * (PB.hole != null ? PB.hole + Math.random() * 1.5 : 3 + Math.random() * 4),
         // the computer QB throws after reading the defense for a moment
-        qbTime: type === 'deep' ? 2.1 + Math.random() * 1.0 : 1.2 + Math.random() * 1.0,
+        qbTime: PB.screen ? 0.9 + Math.random() * 0.4 : PB.pa ? 2.4 + Math.random() * 0.6 : type === 'deep' ? 2.1 + Math.random() * 1.0 : 1.2 + Math.random() * 1.0,
         ctrl: youOff && !game.twoP ? null : lbs[1],
         humanOff: youOff || game.twoP,
         offIn: inputs[youOff ? 1 : 2], defIn: inputs[youOff ? 2 : 1], defWas: false,
@@ -795,7 +874,10 @@
       const isRun = pl.type === 'run';
 
       // Handoff on runs
-      if (isRun && !pl.carrier && pl.t > 0.45) { pl.carrier = pl.rb; pl.ballHolder = pl.rb; }
+      if (isRun && !pl.carrier) {
+        if (pl.pb.qbRun && pl.t > 0.15) { pl.carrier = pl.qb; pl.ballHolder = pl.qb; }
+        else if (!pl.pb.qbRun && pl.t > (pl.pb.handoff || 0.45)) { pl.carrier = pl.rb; pl.ballHolder = pl.rb; }
+      }
       // The computer quarterback looks for an open receiver
       if (!pl.humanOff && !isRun && !pl.ball && !pl.carrier) cpuQB(pl);
 
@@ -808,7 +890,10 @@
           continue;
         }
         if (p.role === 'OL' || (isRun && (p.role === 'WR' || p.role === 'TE') && pl.t > 0.4) || (!isRun && p.role === 'RB' && !p.route)) {
-          const pool = def.filter(d => d !== pl.ctrl && !d.engaged && d.shedT <= 0 && d.stun <= 0 && Math.hypot(d.x - p.x, d.y - p.y) < (p.role === 'OL' ? (isRun ? 8 : 5) : 10));
+          // on a screen, the linemen let the rushers go and run out to block for the running back
+          const screenBlock = pl.pb.screen && p.role === 'OL' && pl.t > 0.8;
+          const near = screenBlock ? pl.rb : p;
+          const pool = def.filter(d => d !== pl.ctrl && !d.engaged && d.shedT <= 0 && d.stun <= 0 && (!screenBlock || d.role !== 'DL') && Math.hypot(d.x - near.x, d.y - near.y) < (screenBlock ? 9 : p.role === 'OL' ? (isRun ? 8 : 5) : 10));
           if (!pool.length) { if (isRun) moveToward(p, p.x + 1, p.y, 2, dt); continue; }
           const t = pool.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
           moveToward(p, t.x - 0.6, t.y, p.speed, dt);
@@ -824,7 +909,12 @@
           else if (isRun) moveToward(p, pl.L - 5, p.y - 1, 2.5, dt);
           continue;
         }
-        if (isRun && p.role === 'RB') { moveToward(p, pl.qb.x + 0.5, pl.qb.y + 0.3, 5, dt); continue; }
+        if (isRun && p.role === 'RB') {
+          if (pl.pb.qbRun) moveToward(p, pl.L - 1.5, p.y, 4, dt); // lead block
+          else if (pl.pb.handoff) moveToward(p, pl.qb.x, pl.hole, 6, dt); // head for the outside
+          else moveToward(p, pl.qb.x + 0.5, pl.qb.y + 0.3, 5, dt);
+          continue;
+        }
         // the receiver the ball is thrown to runs to where it will land
         if (pl.ball && pl.ball.flying && pl.ball.receiver === p) {
           const b = pl.ball;
@@ -920,7 +1010,8 @@
           if (isRun && !c && d.role !== 'DL' && !d.rush) { tx = pl.L; ty = target.y; sp *= 0.5; }
         } else {
           // pass coverage before the throw
-          if (d.rush) { tx = pl.qb.x; ty = pl.qb.y; }
+          if (pl.pb.pa && pl.t < 0.9 && d.role === 'LB' && !d.rush) { tx = pl.L + 0.5; ty = d.y; sp *= 0.8; } // fooled by the fake!
+          else if (d.rush) { tx = pl.qb.x; ty = pl.qb.y; }
           else if (d.man) {
             // start with a cushion, close it over time, and react a little late to cuts
             const r = d.man;
@@ -995,6 +1086,8 @@
           if (prev) { const L = Math.hypot(w.x - prev.x, w.y - prev.y) || 1; p.dir = [(w.x - prev.x) / L, (w.y - prev.y) / L]; }
           p.wp++;
         }
+      } else if (p.hold) {
+        p.vx = p.vy = 0; // curl/screen: wait for the ball
       } else {
         p.vx = p.dir[0] * p.speed; p.vy = p.dir[1] * p.speed;
         p.x += p.vx * dt; p.y = Math.max(1, Math.min(FW - 1, p.y + p.vy * dt));
@@ -1002,7 +1095,7 @@
     }
 
     function predict(r, T) {
-      const g = { x: r.x, y: r.y, vx: r.vx, vy: r.vy, speed: r.speed, route: r.route, wp: r.wp, dir: r.dir.slice() };
+      const g = { x: r.x, y: r.y, vx: r.vx, vy: r.vy, speed: r.speed, route: r.route, wp: r.wp, dir: r.dir.slice(), hold: r.hold };
       if (!g.route) return { x: r.x + r.vx * T, y: r.y + r.vy * T };
       for (let t = 0; t < T; t += 1 / 60) followRoute(g, 1 / 60);
       return { x: g.x, y: g.y };
